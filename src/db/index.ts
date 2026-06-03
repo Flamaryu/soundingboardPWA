@@ -6,7 +6,7 @@ let pool: Pool | null = null
 let dbClient: any = null
 let isMock = true // Default to true to prevent hangs during startup connection checks
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/wilmington_sounding_board'
+const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5432/wilmington_sounding_board'
 
 // Determine if we should attempt connection
 if (process.env.MOCK_DB !== 'true') {

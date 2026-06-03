@@ -6,13 +6,25 @@ import { sql } from 'drizzle-orm'
 import { db, isMockDb, isPointInMultiPolygon, markDbAsFailed } from '../../db'
 import * as schema from '../../db/schema'
 
+import mockDbData from '../../db/mock_db.json'
+
+let mockDbMemory: any = null
+
 // Helper to read the mock database file
 function readMockDb() {
-  const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
-  if (fs.existsSync(filePath)) {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+  if (mockDbMemory) return mockDbMemory
+  try {
+    const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
+    if (fs.existsSync(filePath)) {
+      mockDbMemory = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+      return mockDbMemory
+    }
+  } catch (e) {
+    console.warn("Failed to read mock DB from file, using bundled fallback:", e)
   }
-  return null
+  // Safe deep clone of bundled data
+  mockDbMemory = JSON.parse(JSON.stringify(mockDbData))
+  return mockDbMemory
 }
 
 // Interface for resolved neighborhood

@@ -7,19 +7,36 @@ import { db, isMockDb, markDbAsFailed } from '../../db'
 import * as schema from '../../db/schema'
 import { revalidatePath } from 'next/cache'
 
+import mockDbData from '../../db/mock_db.json'
+
+let mockDbMemory: any = null
+
 // Read mock database helper
 function readMockDb() {
-  const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
-  if (fs.existsSync(filePath)) {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+  if (mockDbMemory) return mockDbMemory
+  try {
+    const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
+    if (fs.existsSync(filePath)) {
+      mockDbMemory = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
+      return mockDbMemory
+    }
+  } catch (e) {
+    console.warn("Failed to read mock DB from file, using bundled fallback:", e)
   }
-  return null
+  // Safe deep clone of bundled data
+  mockDbMemory = JSON.parse(JSON.stringify(mockDbData))
+  return mockDbMemory
 }
 
 // Write to mock database helper
 function writeMockDb(data: any) {
-  const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
+  mockDbMemory = data
+  try {
+    const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
+  } catch (e) {
+    console.warn("Failed to write mock DB to filesystem (read-only environment):", e)
+  }
 }
 
 // Get feed posts based on active user context and zoom level
