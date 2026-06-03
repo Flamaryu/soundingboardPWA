@@ -177,63 +177,9 @@ async function main() {
     await client.query('CREATE EXTENSION IF NOT EXISTS postgis;')
     console.log('✅ PostGIS extension confirmed.')
 
-    // Drop tables in correct order if they exist
-    await client.query('DROP TABLE IF EXISTS posts CASCADE;')
-    await client.query('DROP TABLE IF EXISTS users CASCADE;')
-    await client.query('DROP TABLE IF EXISTS neighborhoods CASCADE;')
-    await client.query('DROP TABLE IF EXISTS planning_districts CASCADE;')
-    await client.query('DROP TABLE IF EXISTS cities CASCADE;')
-    await client.query('DROP TABLE IF EXISTS states CASCADE;')
-    console.log('🧹 Cleaned existing tables.')
-
-    // Recreate tables via Drizzle Kit or simple SQL DDL for direct seeding
-    // Since this is a seeding script, we can run direct create commands to match schema or let drizzle-kit handle it.
-    // Let's create tables if they don't exist:
-    await client.query(`
-      CREATE TABLE states (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        code TEXT NOT NULL UNIQUE
-      );
-      CREATE TABLE cities (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        state_id INTEGER NOT NULL REFERENCES states(id)
-      );
-      CREATE TABLE planning_districts (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        city_id INTEGER NOT NULL REFERENCES cities(id)
-      );
-      CREATE TABLE neighborhoods (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        district_id INTEGER NOT NULL REFERENCES planning_districts(id),
-        boundary GEOMETRY(MultiPolygon, 4326)
-      );
-      CREATE TABLE users (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
-        email TEXT NOT NULL UNIQUE,
-        role TEXT NOT NULL DEFAULT 'citizen',
-        address TEXT,
-        latitude DOUBLE PRECISION,
-        longitude DOUBLE PRECISION,
-        neighborhood_id INTEGER REFERENCES neighborhoods(id)
-      );
-      CREATE TABLE posts (
-        id SERIAL PRIMARY KEY,
-        title TEXT NOT NULL,
-        content TEXT NOT NULL,
-        type TEXT NOT NULL,
-        media_url TEXT,
-        user_type TEXT NOT NULL,
-        user_id INTEGER NOT NULL REFERENCES users(id),
-        neighborhood_id INTEGER NOT NULL REFERENCES neighborhoods(id),
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `)
-    console.log('✅ Recreated DB tables successfully.')
+    // Clean existing tables data (truncate data instead of dropping the schema)
+    await client.query('TRUNCATE TABLE post_reactions, posts, users, neighborhoods, planning_districts, cities, states RESTART IDENTITY CASCADE;')
+    console.log('🧹 Cleaned existing tables data.')
 
     const db = drizzle(pool, { schema })
 
@@ -255,13 +201,18 @@ async function main() {
     // Seed Users
     await db.insert(schema.users).values(mockDbData.users)
     
-    // Seed Posts
-    await db.insert(schema.posts).values(mockDbData.posts)
+    // Seed Posts (map string dates to Date objects)
+    const postsWithDate = mockDbData.posts.map((post: any) => ({
+      ...post,
+      createdAt: new Date(post.createdAt)
+    }))
+    await db.insert(schema.posts).values(postsWithDate)
 
     console.log('🎉 PostgreSQL Database successfully seeded with Wilmington Planning Districts & Neighborhoods!')
     client.release()
   } catch (err) {
-    console.warn('⚠️ Seeding local PostgreSQL skipped or failed (PostgreSQL may be offline/unconfigured locally):', (err as Error).message)
+    console.warn('⚠️ Seeding local PostgreSQL failed:')
+    console.error(err)
     console.info('💡 The application will run successfully using the generated mock_db.json fallback.')
   } finally {
     await pool.end()
