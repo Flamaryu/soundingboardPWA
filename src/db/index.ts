@@ -4,9 +4,9 @@ import * as schema from './schema'
 
 let pool: Pool | null = null
 let dbClient: any = null
-let isMock = true // Default to true to prevent hangs during startup connection checks
-
 const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5432/wilmington_sounding_board'
+const hasEnvDb = !!(process.env.DATABASE_URL || process.env.POSTGRES_URL)
+let isMock = process.env.MOCK_DB === 'true' || !hasEnvDb // Default to true only if mock mode is explicitly forced or no database environment variable is configured
 
 // Determine if we should attempt connection
 if (process.env.MOCK_DB !== 'true') {
