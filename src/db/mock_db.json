@@ -1,0 +1,1096 @@
+{
+  "states": [
+    {
+      "id": 1,
+      "name": "Delaware",
+      "code": "DE"
+    }
+  ],
+  "cities": [
+    {
+      "id": 1,
+      "name": "Wilmington",
+      "stateId": 1
+    }
+  ],
+  "planningDistricts": [
+    {
+      "id": 1,
+      "name": "Northwest",
+      "cityId": 1
+    },
+    {
+      "id": 2,
+      "name": "West Side",
+      "cityId": 1
+    },
+    {
+      "id": 3,
+      "name": "Ninth Ward / North",
+      "cityId": 1
+    },
+    {
+      "id": 4,
+      "name": "Downtown / East / South",
+      "cityId": 1
+    }
+  ],
+  "neighborhoods": [
+    {
+      "id": 1,
+      "name": "Rockford Park",
+      "districtId": 1,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.58200000000001,
+                39.767
+              ],
+              [
+                -75.574,
+                39.767
+              ],
+              [
+                -75.574,
+                39.773
+              ],
+              [
+                -75.58200000000001,
+                39.773
+              ],
+              [
+                -75.58200000000001,
+                39.767
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "name": "Highlands",
+      "districtId": 1,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.574,
+                39.763
+              ],
+              [
+                -75.56599999999999,
+                39.763
+              ],
+              [
+                -75.56599999999999,
+                39.769
+              ],
+              [
+                -75.574,
+                39.769
+              ],
+              [
+                -75.574,
+                39.763
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "name": "Wawaset Park",
+      "districtId": 1,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.57900000000001,
+                39.755
+              ],
+              [
+                -75.571,
+                39.755
+              ],
+              [
+                -75.571,
+                39.761
+              ],
+              [
+                -75.57900000000001,
+                39.761
+              ],
+              [
+                -75.57900000000001,
+                39.755
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 4,
+      "name": "Delaware Ave",
+      "districtId": 1,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.56400000000001,
+                39.755
+              ],
+              [
+                -75.556,
+                39.755
+              ],
+              [
+                -75.556,
+                39.761
+              ],
+              [
+                -75.56400000000001,
+                39.761
+              ],
+              [
+                -75.56400000000001,
+                39.755
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "name": "Forty Acres",
+      "districtId": 2,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.571,
+                39.76
+              ],
+              [
+                -75.565,
+                39.76
+              ],
+              [
+                -75.565,
+                39.764
+              ],
+              [
+                -75.571,
+                39.764
+              ],
+              [
+                -75.571,
+                39.76
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "name": "The Triangle",
+      "districtId": 2,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.561,
+                39.762
+              ],
+              [
+                -75.555,
+                39.762
+              ],
+              [
+                -75.555,
+                39.766000000000005
+              ],
+              [
+                -75.561,
+                39.766000000000005
+              ],
+              [
+                -75.561,
+                39.762
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "name": "Little Italy",
+      "districtId": 2,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.57600000000001,
+                39.745
+              ],
+              [
+                -75.568,
+                39.745
+              ],
+              [
+                -75.568,
+                39.751
+              ],
+              [
+                -75.57600000000001,
+                39.751
+              ],
+              [
+                -75.57600000000001,
+                39.745
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "name": "Cool Spring",
+      "districtId": 2,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.566,
+                39.745
+              ],
+              [
+                -75.55799999999999,
+                39.745
+              ],
+              [
+                -75.55799999999999,
+                39.751
+              ],
+              [
+                -75.566,
+                39.751
+              ],
+              [
+                -75.566,
+                39.745
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "name": "Trinity Vicinity",
+      "districtId": 2,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.565,
+                39.739999999999995
+              ],
+              [
+                -75.559,
+                39.739999999999995
+              ],
+              [
+                -75.559,
+                39.744
+              ],
+              [
+                -75.565,
+                39.744
+              ],
+              [
+                -75.565,
+                39.739999999999995
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "name": "West Center City",
+      "districtId": 2,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.559,
+                39.742
+              ],
+              [
+                -75.553,
+                39.742
+              ],
+              [
+                -75.553,
+                39.746
+              ],
+              [
+                -75.559,
+                39.746
+              ],
+              [
+                -75.559,
+                39.742
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "name": "Ninth Ward",
+      "districtId": 3,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.549,
+                39.765
+              ],
+              [
+                -75.541,
+                39.765
+              ],
+              [
+                -75.541,
+                39.771
+              ],
+              [
+                -75.549,
+                39.771
+              ],
+              [
+                -75.549,
+                39.765
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "name": "Baynard Village",
+      "districtId": 3,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.545,
+                39.757999999999996
+              ],
+              [
+                -75.539,
+                39.757999999999996
+              ],
+              [
+                -75.539,
+                39.762
+              ],
+              [
+                -75.545,
+                39.762
+              ],
+              [
+                -75.545,
+                39.757999999999996
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 13,
+      "name": "Brandywine Village",
+      "districtId": 3,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.537,
+                39.754
+              ],
+              [
+                -75.531,
+                39.754
+              ],
+              [
+                -75.531,
+                39.758
+              ],
+              [
+                -75.537,
+                39.758
+              ],
+              [
+                -75.537,
+                39.754
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 14,
+      "name": "Brandywine Hills",
+      "districtId": 3,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.535,
+                39.77
+              ],
+              [
+                -75.525,
+                39.77
+              ],
+              [
+                -75.525,
+                39.778
+              ],
+              [
+                -75.535,
+                39.778
+              ],
+              [
+                -75.535,
+                39.77
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 15,
+      "name": "Riverside",
+      "districtId": 3,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.52900000000001,
+                39.759
+              ],
+              [
+                -75.521,
+                39.759
+              ],
+              [
+                -75.521,
+                39.765
+              ],
+              [
+                -75.52900000000001,
+                39.765
+              ],
+              [
+                -75.52900000000001,
+                39.759
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 16,
+      "name": "Eastlake",
+      "districtId": 3,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.535,
+                39.762
+              ],
+              [
+                -75.529,
+                39.762
+              ],
+              [
+                -75.529,
+                39.766000000000005
+              ],
+              [
+                -75.535,
+                39.766000000000005
+              ],
+              [
+                -75.535,
+                39.762
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 17,
+      "name": "Prices Run",
+      "districtId": 3,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.541,
+                39.763999999999996
+              ],
+              [
+                -75.535,
+                39.763999999999996
+              ],
+              [
+                -75.535,
+                39.768
+              ],
+              [
+                -75.541,
+                39.768
+              ],
+              [
+                -75.541,
+                39.763999999999996
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 18,
+      "name": "Center City",
+      "districtId": 4,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.552,
+                39.739
+              ],
+              [
+                -75.544,
+                39.739
+              ],
+              [
+                -75.544,
+                39.745
+              ],
+              [
+                -75.552,
+                39.745
+              ],
+              [
+                -75.552,
+                39.739
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 19,
+      "name": "Quaker Hill",
+      "districtId": 4,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.555,
+                39.736999999999995
+              ],
+              [
+                -75.549,
+                39.736999999999995
+              ],
+              [
+                -75.549,
+                39.741
+              ],
+              [
+                -75.555,
+                39.741
+              ],
+              [
+                -75.555,
+                39.736999999999995
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 20,
+      "name": "Midtown Brandywine",
+      "districtId": 4,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.551,
+                39.745999999999995
+              ],
+              [
+                -75.545,
+                39.745999999999995
+              ],
+              [
+                -75.545,
+                39.75
+              ],
+              [
+                -75.551,
+                39.75
+              ],
+              [
+                -75.551,
+                39.745999999999995
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 21,
+      "name": "East Side",
+      "districtId": 4,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.542,
+                39.739
+              ],
+              [
+                -75.53399999999999,
+                39.739
+              ],
+              [
+                -75.53399999999999,
+                39.745
+              ],
+              [
+                -75.542,
+                39.745
+              ],
+              [
+                -75.542,
+                39.739
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 22,
+      "name": "Old Swedes",
+      "districtId": 4,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.539,
+                39.733999999999995
+              ],
+              [
+                -75.533,
+                39.733999999999995
+              ],
+              [
+                -75.533,
+                39.738
+              ],
+              [
+                -75.539,
+                39.738
+              ],
+              [
+                -75.539,
+                39.733999999999995
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 23,
+      "name": "Riverfront",
+      "districtId": 4,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.56099999999999,
+                39.728
+              ],
+              [
+                -75.551,
+                39.728
+              ],
+              [
+                -75.551,
+                39.736
+              ],
+              [
+                -75.56099999999999,
+                39.736
+              ],
+              [
+                -75.56099999999999,
+                39.728
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 24,
+      "name": "Southbridge",
+      "districtId": 4,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.548,
+                39.72
+              ],
+              [
+                -75.536,
+                39.72
+              ],
+              [
+                -75.536,
+                39.727999999999994
+              ],
+              [
+                -75.548,
+                39.727999999999994
+              ],
+              [
+                -75.548,
+                39.72
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 25,
+      "name": "Browntown",
+      "districtId": 4,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.574,
+                39.731
+              ],
+              [
+                -75.56599999999999,
+                39.731
+              ],
+              [
+                -75.56599999999999,
+                39.737
+              ],
+              [
+                -75.574,
+                39.737
+              ],
+              [
+                -75.574,
+                39.731
+              ]
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": 26,
+      "name": "Hedgeville",
+      "districtId": 4,
+      "boundary": {
+        "type": "MultiPolygon",
+        "coordinates": [
+          [
+            [
+              [
+                -75.571,
+                39.736
+              ],
+              [
+                -75.565,
+                39.736
+              ],
+              [
+                -75.565,
+                39.74
+              ],
+              [
+                -75.571,
+                39.74
+              ],
+              [
+                -75.571,
+                39.736
+              ]
+            ]
+          ]
+        ]
+      }
+    }
+  ],
+  "users": [
+    {
+      "id": 1,
+      "name": "Marcus Williams",
+      "email": "marcus@wilm.net",
+      "role": "citizen",
+      "address": "Trolley Square, Wilmington DE",
+      "latitude": -75.568,
+      "longitude": 39.762,
+      "neighborhoodId": 5
+    },
+    {
+      "id": 2,
+      "name": "Brew Haha Cafe",
+      "email": "info@brewhaha.com",
+      "role": "business",
+      "address": "1700 Delaware Ave, Wilmington, DE",
+      "latitude": -75.56,
+      "longitude": 39.758,
+      "neighborhoodId": 4
+    },
+    {
+      "id": 3,
+      "name": "Constitution Yards",
+      "email": "events@constitutionyards.com",
+      "role": "business",
+      "address": "308 Justison St, Wilmington, DE",
+      "latitude": -75.556,
+      "longitude": 39.732,
+      "neighborhoodId": 23
+    },
+    {
+      "id": 4,
+      "name": "Sarah Thompson",
+      "email": "sarah@dtwilm.org",
+      "role": "citizen",
+      "address": "Market St, Wilmington DE",
+      "latitude": -75.548,
+      "longitude": 39.742,
+      "neighborhoodId": 18
+    }
+  ],
+  "posts": [
+    {
+      "id": 1,
+      "title": "Welcome to the Sounding Board!",
+      "content": "Excited to launch this local board. Post updates about local happenings, news, and community notes.",
+      "type": "miniblog",
+      "mediaUrl": "",
+      "userType": "citizen",
+      "userId": 1,
+      "neighborhoodId": 5,
+      "createdAt": "2026-06-02T16:33:04.604Z"
+    },
+    {
+      "id": 2,
+      "title": "Weekly Trivia Night & Craft Brew Specials",
+      "content": "Join us at Brew Haha Delaware Ave this Thursday at 7 PM for local trivia! 15% off specialty roasted lattes and craft cider imports for neighbors.",
+      "type": "story",
+      "mediaUrl": "https://images.unsplash.com/photo-1511920170033-f8396924c348?w=800&auto=format&fit=crop",
+      "userType": "business",
+      "userId": 2,
+      "neighborhoodId": 4,
+      "createdAt": "2026-06-02T16:33:04.606Z"
+    },
+    {
+      "id": 3,
+      "title": "Live Music by the Christina River",
+      "content": "This Friday: Local blues band playing live under the lights starting at 6 PM. Bring the kids, dogs allowed!",
+      "type": "story",
+      "mediaUrl": "https://images.unsplash.com/photo-1506157786151-b8491531f063?w=800&auto=format&fit=crop",
+      "userType": "business",
+      "userId": 3,
+      "neighborhoodId": 23,
+      "createdAt": "2026-06-02T16:33:04.606Z"
+    },
+    {
+      "id": 4,
+      "title": "Beautiful morning jogging at Rockford Park",
+      "content": "Check out the views of the stone tower today. Best place to clear your mind in Wilmington!",
+      "type": "short",
+      "mediaUrl": "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&auto=format&fit=crop",
+      "userType": "citizen",
+      "userId": 1,
+      "neighborhoodId": 1,
+      "createdAt": "2026-06-02T16:33:04.606Z"
+    },
+    {
+      "id": 5,
+      "title": "Cool Spring Farmers Market opening this week",
+      "content": "Support local growers and artisans! Lots of organic vegetables and handmade pastries available.",
+      "type": "miniblog",
+      "mediaUrl": "",
+      "userType": "citizen",
+      "userId": 4,
+      "neighborhoodId": 8,
+      "createdAt": "2026-06-02T16:33:04.606Z"
+    },
+    {
+      "id": 6,
+      "title": "testing",
+      "content": "test test ",
+      "type": "miniblog",
+      "mediaUrl": "",
+      "userType": "citizen",
+      "userId": 4,
+      "neighborhoodId": 18,
+      "createdAt": "2026-06-02T16:47:23.441Z"
+    },
+    {
+      "id": 7,
+      "title": "test ",
+      "content": "testing ",
+      "type": "story",
+      "mediaUrl": "https://www.youtube.com/watch?v=yIqsYuU5D9U",
+      "userType": "citizen",
+      "userId": 4,
+      "neighborhoodId": 5,
+      "createdAt": "2026-06-02T16:48:52.610Z",
+      "likes": 2,
+      "seconds": 0
+    },
+    {
+      "id": 8,
+      "title": "Did I see what I think I saw",
+      "content": "Come get that summer only Brew Haha Bash. Limited time only don't wait!",
+      "type": "story",
+      "mediaUrl": "https://www.youtube.com/watch?v=yHkIyT8i0P4",
+      "userType": "business",
+      "userId": 2,
+      "neighborhoodId": 4,
+      "createdAt": "2026-06-03T01:04:41.145Z"
+    },
+    {
+      "id": 9,
+      "title": "testing off line posting",
+      "content": "testing",
+      "type": "miniblog",
+      "mediaUrl": "",
+      "userType": "citizen",
+      "userId": 1,
+      "neighborhoodId": 1,
+      "createdAt": "2026-06-03T01:11:42.198Z",
+      "seconds": 4,
+      "likes": 3,
+      "dislikes": 0
+    },
+    {
+      "id": 10,
+      "title": "New Street Light Project",
+      "content": "We need more street lights on Delaware Avenue for safety.",
+      "type": "miniblog",
+      "mediaUrl": "",
+      "userType": "citizen",
+      "userId": 1,
+      "neighborhoodId": 5,
+      "createdAt": "2026-06-03T01:31:21.834Z",
+      "isProposal": true,
+      "likes": 0,
+      "seconds": 1,
+      "dislikes": 0,
+      "objections": 1
+    }
+  ],
+  "postReactions": [
+    {
+      "id": 1,
+      "postId": 7,
+      "userId": 1,
+      "type": "like"
+    }
+  ]
+}

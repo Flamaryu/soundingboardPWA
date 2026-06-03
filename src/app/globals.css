@@ -1,26 +1,134 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #FDFBF7; /* Warm Alabaster */
+  --foreground: #2B2D42; /* Slate Charcoal */
+  --card-bg: #FFFFFF;
+  --card-border: rgba(43, 45, 66, 0.1);
+  --card-hover-border: rgba(217, 4, 41, 0.25);
+  --accent: #D90429; /* Row-House Brick Red */
+  --accent-hover: #b20320;
+  --accent-muted: rgba(217, 4, 41, 0.12);
+  --muted: rgba(43, 45, 66, 0.6);
+  --muted-bg: #F5F2EA;
+  --map-bg: #F5F2EA;
+  --map-grid: rgba(43, 45, 66, 0.05);
+  --shadow-color: rgba(43, 45, 66, 0.06);
+  --scrollbar-track: rgba(43, 45, 66, 0.05);
+  --scrollbar-thumb: rgba(43, 45, 66, 0.2);
+  --scrollbar-thumb-hover: rgba(43, 45, 66, 0.35);
+
+  --district-1-fill: rgba(14, 165, 233, 0.06); 
+  --district-1-stroke: rgba(14, 165, 233, 0.35);
+  --district-2-fill: rgba(168, 85, 247, 0.06);
+  --district-2-stroke: rgba(168, 85, 247, 0.35);
+  --district-3-fill: rgba(234, 179, 8, 0.04);
+  --district-3-stroke: rgba(234, 179, 8, 0.35);
+  --district-4-fill: rgba(20, 184, 166, 0.06);
+  --district-4-stroke: rgba(20, 184, 166, 0.35);
+  --map-inactive-fill: rgba(43, 45, 66, 0.02);
+  --map-inactive-stroke: rgba(43, 45, 66, 0.08);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --background: #1E1F2B;
+  --foreground: #FDFBF7; /* Warm Alabaster */
+  --card-bg: #2B2D42; /* Slate Charcoal */
+  --card-border: rgba(253, 251, 247, 0.08);
+  --card-hover-border: rgba(217, 4, 41, 0.4);
+  --accent: #D90429;
+  --accent-hover: #f01e43;
+  --accent-muted: rgba(217, 4, 41, 0.25);
+  --muted: rgba(253, 251, 247, 0.65);
+  --muted-bg: #212335;
+  --map-bg: #151622;
+  --map-grid: rgba(253, 251, 247, 0.03);
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --scrollbar-track: rgba(253, 251, 247, 0.05);
+  --scrollbar-thumb: rgba(253, 251, 247, 0.2);
+  --scrollbar-thumb-hover: rgba(253, 251, 247, 0.35);
+
+  --district-1-fill: rgba(14, 165, 233, 0.12); 
+  --district-1-stroke: rgba(14, 165, 233, 0.4);
+  --district-2-fill: rgba(168, 85, 247, 0.12);
+  --district-2-stroke: rgba(168, 85, 247, 0.4);
+  --district-3-fill: rgba(234, 179, 8, 0.08);
+  --district-3-stroke: rgba(234, 179, 8, 0.4);
+  --district-4-fill: rgba(20, 184, 166, 0.12);
+  --district-4-stroke: rgba(20, 184, 166, 0.4);
+  --map-inactive-fill: rgba(253, 251, 247, 0.02);
+  --map-inactive-stroke: rgba(253, 251, 247, 0.08);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+@theme {
+  --color-bg-main: var(--background);
+  --color-text-main: var(--foreground);
+  --color-panel-bg: var(--card-bg);
+  --color-panel-border: var(--card-border);
+  --color-accent-main: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+  --color-text-muted: var(--muted);
+  --color-bg-muted: var(--muted-bg);
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Custom premium scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Glassmorphism utility card */
+.glass-panel {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 8px 32px 0 var(--shadow-color);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.glass-panel-hover:hover {
+  border-color: var(--card-hover-border);
+  box-shadow: 0 12px 40px 0 var(--accent-muted);
+}
+
+/* Glowing text */
+.glow-text {
+  text-shadow: 0 0 12px var(--accent-muted);
+}
+
+/* Pulse animation for map indicators */
+@keyframes pulse-glow {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.8;
+    box-shadow: 0 0 0 0 var(--accent-muted);
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 1;
+    box-shadow: 0 0 0 10px rgba(217, 4, 41, 0);
+  }
+}
+
+.indicator-pulse {
+  animation: pulse-glow 2.2s infinite ease-in-out;
 }
