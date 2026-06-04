@@ -3,67 +3,67 @@
 @custom-variant dark (.dark &);
 
 :root {
-  --background: #FDFBF7; /* Light Canvas Background */
-  --card-bg: #F5F2EB; /* Light Card / Container Background */
-  --foreground: #0F172A; /* Light Primary Text */
-  --muted: #475569; /* Light Secondary Text / Icons */
-  --accent: #00A8A8; /* Light High-Energy Accent */
-  --accent-hover: #008b8b;
-  --accent-muted: rgba(0, 168, 168, 0.12);
-  --alert-accent: #D97706; /* Light Alert / Warning Accent */
-  
-  --card-border: rgba(15, 23, 42, 0.08);
-  --card-hover-border: rgba(0, 168, 168, 0.35);
-  --muted-bg: #eae6d7;
-  
-  --map-bg: #F5F2EB;
-  --map-grid: rgba(15, 23, 42, 0.04);
-  --shadow-color: rgba(15, 23, 42, 0.04);
-  --scrollbar-track: rgba(15, 23, 42, 0.04);
-  --scrollbar-thumb: rgba(15, 23, 42, 0.15);
-  --scrollbar-thumb-hover: rgba(15, 23, 42, 0.25);
-  
-  --district-1-fill: rgba(14, 165, 233, 0.06); 
-  --district-1-stroke: rgba(14, 165, 233, 0.3);
-  --district-2-fill: rgba(168, 85, 247, 0.06);
-  --district-2-stroke: rgba(168, 85, 247, 0.3);
-  --district-3-fill: rgba(234, 179, 8, 0.04);
-  --district-3-stroke: rgba(234, 179, 8, 0.3);
-  --district-4-fill: rgba(20, 184, 166, 0.06);
-  --district-4-stroke: rgba(20, 184, 166, 0.3);
-  --map-inactive-fill: rgba(15, 23, 42, 0.02);
-  --map-inactive-stroke: rgba(15, 23, 42, 0.08);
-}
-
-.dark {
-  --background: #080B11; /* Dark Canvas Background */
-  --card-bg: #121824; /* Dark Card / Container Background */
-  --foreground: #F1F5F9; /* Dark Primary Text */
-  --muted: #64748B; /* Dark Secondary Text / Icons */
-  --accent: #00F5D4; /* Dark High-Energy Accent */
-  --accent-hover: #00ffd6;
-  --accent-muted: rgba(0, 245, 212, 0.12);
-  --alert-accent: #FFB703; /* Dark Alert / Warning Accent */
+  --background: #0B132B; /* Deep Ink Blue Canvas Background */
+  --card-bg: #1C2541; /* Slate Blue Card / Container Background */
+  --foreground: #F1F5F9; /* Crisp Primary Text */
+  --muted: #94A3B8; /* Muted Secondary Text / Icons */
+  --accent: #D90429; /* Interactive Accent (Row-House Brick Red) */
+  --accent-hover: #EF233C;
+  --accent-muted: rgba(217, 4, 41, 0.15);
+  --alert-accent: #FFB703; /* Warning Accent */
   
   --card-border: rgba(241, 245, 249, 0.08);
-  --card-hover-border: rgba(0, 245, 212, 0.35);
-  --muted-bg: #1d2433;
+  --card-hover-border: rgba(217, 4, 41, 0.35);
+  --muted-bg: #151D33;
   
-  --map-bg: #121824;
+  --map-bg: #1C2541;
   --map-grid: rgba(241, 245, 249, 0.03);
   --shadow-color: rgba(0, 0, 0, 0.3);
   --scrollbar-track: rgba(241, 245, 249, 0.04);
   --scrollbar-thumb: rgba(241, 245, 249, 0.15);
   --scrollbar-thumb-hover: rgba(241, 245, 249, 0.25);
   
-  --district-1-fill: rgba(14, 165, 233, 0.1); 
-  --district-1-stroke: rgba(14, 165, 233, 0.35);
-  --district-2-fill: rgba(168, 85, 247, 0.1);
-  --district-2-stroke: rgba(168, 85, 247, 0.35);
+  --district-1-fill: rgba(14, 165, 233, 0.08); 
+  --district-1-stroke: rgba(14, 165, 233, 0.3);
+  --district-2-fill: rgba(168, 85, 247, 0.08);
+  --district-2-stroke: rgba(168, 85, 247, 0.3);
   --district-3-fill: rgba(234, 179, 8, 0.06);
-  --district-3-stroke: rgba(234, 179, 8, 0.35);
-  --district-4-fill: rgba(20, 184, 166, 0.1);
-  --district-4-stroke: rgba(20, 184, 166, 0.35);
+  --district-3-stroke: rgba(234, 179, 8, 0.3);
+  --district-4-fill: rgba(20, 184, 166, 0.08);
+  --district-4-stroke: rgba(20, 184, 166, 0.3);
+  --map-inactive-fill: rgba(241, 245, 249, 0.02);
+  --map-inactive-stroke: rgba(241, 245, 249, 0.08);
+}
+
+.dark {
+  --background: #0B132B;
+  --card-bg: #1C2541;
+  --foreground: #F1F5F9;
+  --muted: #94A3B8;
+  --accent: #D90429;
+  --accent-hover: #EF233C;
+  --accent-muted: rgba(217, 4, 41, 0.15);
+  --alert-accent: #FFB703;
+  
+  --card-border: rgba(241, 245, 249, 0.08);
+  --card-hover-border: rgba(217, 4, 41, 0.35);
+  --muted-bg: #151D33;
+  
+  --map-bg: #1C2541;
+  --map-grid: rgba(241, 245, 249, 0.03);
+  --shadow-color: rgba(0, 0, 0, 0.3);
+  --scrollbar-track: rgba(241, 245, 249, 0.04);
+  --scrollbar-thumb: rgba(241, 245, 249, 0.15);
+  --scrollbar-thumb-hover: rgba(241, 245, 249, 0.25);
+  
+  --district-1-fill: rgba(14, 165, 233, 0.08); 
+  --district-1-stroke: rgba(14, 165, 233, 0.3);
+  --district-2-fill: rgba(168, 85, 247, 0.08);
+  --district-2-stroke: rgba(168, 85, 247, 0.3);
+  --district-3-fill: rgba(234, 179, 8, 0.06);
+  --district-3-stroke: rgba(234, 179, 8, 0.3);
+  --district-4-fill: rgba(20, 184, 166, 0.08);
+  --district-4-stroke: rgba(20, 184, 166, 0.3);
   --map-inactive-fill: rgba(241, 245, 249, 0.02);
   --map-inactive-stroke: rgba(241, 245, 249, 0.08);
 }

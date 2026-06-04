@@ -31,12 +31,7 @@ function readMockDb() {
 // Write to mock database helper
 function writeMockDb(data: any) {
   mockDbMemory = data
-  try {
-    const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8')
-  } catch (e) {
-    console.warn("Failed to write mock DB to filesystem (read-only environment):", e)
-  }
+  // Bypassing filesystem writes for strictly in-memory ephemeral testing
 }
 
 // Get feed posts based on active user context and zoom level

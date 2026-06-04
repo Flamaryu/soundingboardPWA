@@ -41,8 +41,8 @@ if (process.env.MOCK_DB !== 'true') {
 }
 
 export function isMockDb(): boolean {
-  // If explicitly configured or client is null, use mock
-  return isMock || !dbClient
+  // Enforce in-memory ephemeral database mode for testing
+  return true
 }
 
 export function markDbAsFailed(): void {

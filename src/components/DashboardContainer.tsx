@@ -31,25 +31,11 @@ export default function DashboardContainer({
   const searchQuery = searchParams.get('search') || ''
   const [isPending, startTransition] = useTransition()
 
-  // Theme Management
-  const [theme, setTheme] = useState<'light' | 'dark'>('dark')
-
+  // Theme Management (Hardcoded Dark Mode)
   useEffect(() => {
-    const isDark = document.documentElement.classList.contains('dark')
-    setTheme(isDark ? 'dark' : 'light')
+    document.documentElement.classList.add('dark')
+    localStorage.setItem('theme', 'dark')
   }, [])
-
-  const toggleTheme = () => {
-    const nextTheme = theme === 'dark' ? 'light' : 'dark'
-    setTheme(nextTheme)
-    if (nextTheme === 'dark') {
-      document.documentElement.classList.add('dark')
-      localStorage.setItem('theme', 'dark')
-    } else {
-      document.documentElement.classList.remove('dark')
-      localStorage.setItem('theme', 'light')
-    }
-  }
 
   // Onboarding Address Form State
   const [addressInput, setAddressInput] = useState('')
@@ -163,17 +149,7 @@ export default function DashboardContainer({
         {/* Low-Friction Geocoding / Geolocation Boarding Shell */}
         <div className="flex flex-col gap-2 w-full md:w-auto">
           <div className="flex gap-2">
-            <button
-              onClick={toggleTheme}
-              className="p-2.5 rounded-2xl bg-panel-bg border border-panel-border text-text-main hover:bg-bg-muted transition-all active:scale-95 flex items-center justify-center"
-              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
-            >
-              {theme === 'dark' ? (
-                <Sun className="w-4 h-4 text-amber-500 animate-pulse" />
-              ) : (
-                <Moon className="w-4 h-4 text-text-muted" />
-              )}
-            </button>
+
 
             <form onSubmit={handleAddressSubmit} className="flex gap-2 w-full md:w-[320px]">
               <div className="relative w-full">
@@ -196,7 +172,7 @@ export default function DashboardContainer({
 
             <button
               onClick={handleGeolocation}
-              className="bg-accent-main hover:bg-accent-hover text-white dark:text-slate-950 font-semibold text-xs px-4 py-2.5 rounded-2xl transition-all shadow-md shadow-accent-main/10 flex items-center gap-1.5 active:scale-95"
+              className="bg-accent-main hover:bg-accent-hover text-white font-semibold text-xs px-4 py-2.5 rounded-2xl transition-all shadow-md shadow-accent-main/10 flex items-center gap-1.5 active:scale-95"
               title="Use Geolocation"
             >
               <Navigation className="w-3.5 h-3.5" />
@@ -242,7 +218,7 @@ export default function DashboardContainer({
         </section>
 
         {/* Right Side: Interactive Map Visuals (5 Cols) */}
-        <aside className={`lg:col-span-5 w-full h-[550px] lg:h-[700px] lg:sticky lg:top-6 ${mobileTab === 'map' ? 'block' : 'hidden lg:block'}`}>
+        <aside className={`lg:col-span-5 w-full h-[450px] landscape:h-[300px] lg:h-[700px] lg:sticky lg:top-6 ${mobileTab === 'map' ? 'block' : 'hidden lg:block'}`}>
           <InteractiveMap
             neighborhoods={neighborhoods}
             businesses={mockUsers.filter((u: any) => u.role === 'business')}
@@ -264,7 +240,7 @@ export default function DashboardContainer({
           onClick={() => setMobileTab('feed')}
           className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-95 flex items-center gap-1.5 ${
             mobileTab === 'feed'
-              ? 'bg-accent-main text-white dark:text-slate-950 shadow-md shadow-accent-main/15'
+              ? 'bg-accent-main text-white shadow-md shadow-accent-main/15'
               : 'text-text-muted hover:text-text-main'
           }`}
         >
@@ -274,7 +250,7 @@ export default function DashboardContainer({
           onClick={() => setMobileTab('map')}
           className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-95 flex items-center gap-1.5 ${
             mobileTab === 'map'
-              ? 'bg-accent-main text-white dark:text-slate-950 shadow-md shadow-accent-main/15'
+              ? 'bg-accent-main text-white shadow-md shadow-accent-main/15'
               : 'text-text-muted hover:text-text-main'
           }`}
         >

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { MapPin, ZoomIn, ZoomOut, RefreshCw, Compass } from 'lucide-react'
+import { MapPin, ZoomIn, ZoomOut, RefreshCw, Compass, X } from 'lucide-react'
 
 // Projection boundary box for Wilmington
 const MIN_LNG = -75.590
@@ -44,6 +44,7 @@ export default function InteractiveMap({
   const [zoomLevel, setZoomLevel] = useState<number>(1)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
+  const [showGeocodeBanner, setShowGeocodeBanner] = useState(true)
 
   const svgRef = useRef<SVGSVGElement>(null)
   const dragStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -305,31 +306,48 @@ export default function InteractiveMap({
   const activeNh = neighborhoods.find(n => n.id === activeNeighborhoodId)
 
   return (
-    <div className="relative w-full h-[500px] lg:h-full min-h-[400px] bg-map-bg border border-panel-border rounded-3xl overflow-hidden glass-panel flex flex-col">
+    <div className="relative w-full h-full min-h-[280px] md:min-h-[400px] bg-map-bg border border-panel-border rounded-3xl overflow-hidden glass-panel flex flex-col">
       {/* HUD Header */}
-      <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-center pointer-events-none animate-fadeIn">
-        <div className="bg-panel-bg border border-panel-border backdrop-blur-md px-4 py-2 rounded-2xl pointer-events-auto flex items-center gap-3">
-          <Compass className="w-5 h-5 text-accent-main animate-spin-slow" />
-          <div>
-            <div className="text-xs text-accent-main font-bold tracking-wider uppercase">Wilmington DE Vector GIS</div>
-            <div className="text-sm font-semibold truncate max-w-[200px] text-text-main">
-              {activeNh ? `${activeNh.name} Cluster` : 'Select Neighborhood'}
+      <div className="absolute top-4 left-4 right-4 z-20 flex flex-col gap-2 pointer-events-none animate-fadeIn">
+        <div className="flex justify-between items-center w-full">
+          <div className="bg-panel-bg border border-panel-border backdrop-blur-md px-4 py-2 rounded-2xl pointer-events-auto flex items-center gap-3">
+            <Compass className="w-5 h-5 text-accent-main animate-spin-slow" />
+            <div>
+              <div className="text-xs text-accent-main font-bold tracking-wider uppercase">Wilmington DE Vector GIS</div>
+              <div className="text-sm font-semibold truncate max-w-[200px] text-text-main">
+                {activeNh ? `${activeNh.name} Cluster` : 'Select Neighborhood'}
+              </div>
             </div>
+          </div>
+
+          <div className="flex gap-2 pointer-events-auto">
+            <button 
+              onClick={() => {
+                setZoomLevel(1)
+                setPanOffset({ x: 0, y: 0 })
+              }}
+              className="w-10 h-10 rounded-xl bg-panel-bg border border-panel-border text-accent-main flex items-center justify-center hover:bg-bg-muted transition-colors"
+              title="Reset Map View"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        <div className="flex gap-2 pointer-events-auto">
-          <button 
-            onClick={() => {
-              setZoomLevel(1)
-              setPanOffset({ x: 0, y: 0 })
-            }}
-            className="w-10 h-10 rounded-xl bg-panel-bg border border-panel-border text-accent-main flex items-center justify-center hover:bg-bg-muted transition-colors"
-            title="Reset Map View"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
+        {/* Dismissible Geocoding Info Banner sits naturally below HUD row, left-aligned, pointer-events-auto */}
+        {showGeocodeBanner && (
+          <div className="self-start bg-panel-bg border border-panel-border backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] text-text-muted flex items-center gap-2 font-medium shadow-md pointer-events-auto animate-fadeIn max-w-full md:max-w-md">
+            <MapPin className="w-3.5 h-3.5 text-accent-main shrink-0" />
+            <span className="leading-normal">Click on vector grids to mock geocode location coordinates</span>
+            <button
+              onClick={() => setShowGeocodeBanner(false)}
+              className="text-text-muted hover:text-text-main ml-1 transition-colors focus:outline-none"
+              title="Dismiss instruction"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* SVG Viewport */}
@@ -524,10 +542,7 @@ export default function InteractiveMap({
         </button>
       </div>
 
-      <div className="absolute bottom-4 left-4 z-20 bg-panel-bg border border-panel-border backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] text-text-muted flex items-center gap-1.5 font-medium shadow-md pointer-events-auto">
-        <MapPin className="w-3.5 h-3.5 text-accent-main" />
-        <span>Click on vector grids to mock geocode location coordinates</span>
-      </div>
+
 
       {/* Floating Interactive Hover Tooltip */}
       {hoveredNh && !hoveredBiz && (

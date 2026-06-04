@@ -457,18 +457,18 @@ export default function FeedContainer({
 
       {/* Collapsible Civic Alert Banner */}
       {showAlerts && (
-        <div className="bg-accent-main text-white dark:text-slate-950 p-5 rounded-3xl flex flex-col gap-3 shadow-xl relative animate-fadeIn">
+        <div className="bg-accent-main text-white p-5 rounded-3xl flex flex-col gap-3 shadow-xl relative animate-fadeIn">
           <button 
             onClick={() => setShowAlerts(false)}
-            className="absolute top-4 right-4 text-white/70 hover:text-white dark:text-slate-950/70 dark:hover:text-slate-950 transition-colors"
+            className="absolute top-4 right-4 text-white/70 hover:text-white transition-colors"
             title="Dismiss alerts pane"
           >
             <X className="w-4 h-4" />
           </button>
           
-          <div className="flex items-center gap-2 text-white dark:text-slate-950">
-            <ShieldAlert className="w-5 h-5 animate-pulse text-white dark:text-slate-950" />
-            <h3 className="text-sm font-extrabold uppercase tracking-wider text-white dark:text-slate-950">Wilmington Civic Alerts HUD</h3>
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 animate-pulse" />
+            <h3 className="text-sm font-extrabold uppercase tracking-wider">Wilmington Civic Alerts HUD</h3>
           </div>
 
           <div className="flex flex-col gap-2 mt-1">
@@ -476,11 +476,11 @@ export default function FeedContainer({
               <button
                 key={alert.id}
                 onClick={() => handleAlertClick(alert)}
-                className="flex justify-between items-center text-left text-xs bg-white/10 hover:bg-white/20 dark:bg-slate-950/5 dark:hover:bg-slate-950/10 px-4 py-2.5 rounded-2xl transition-all border border-white/5 dark:border-slate-950/10 active:scale-98 text-white dark:text-slate-950"
+                className="flex justify-between items-center text-left text-xs bg-white/10 hover:bg-white/20 px-4 py-2.5 rounded-2xl transition-all border border-white/5 active:scale-98"
                 title={`Scope map & board feed to ${alert.neighborhoodName}`}
               >
-                <span className="text-white dark:text-slate-950">{alert.text}</span>
-                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-white/20 dark:bg-slate-950/10 rounded-lg text-white dark:text-slate-950">Zoom Map</span>
+                <span>{alert.text}</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 bg-white/20 rounded-lg">Zoom Map</span>
               </button>
             ))}
           </div>
@@ -490,7 +490,7 @@ export default function FeedContainer({
       {/* Account Switching & PWA Network HUD Header */}
       <div className="bg-panel-bg border border-panel-border p-4 rounded-3xl flex flex-wrap gap-4 items-center justify-between shadow-xl">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-accent-main flex items-center justify-center font-bold text-white dark:text-slate-950 shadow-lg shadow-accent-main/20">
+          <div className="w-10 h-10 rounded-2xl bg-accent-main flex items-center justify-center font-bold text-white shadow-lg shadow-accent-main/20">
             {activeUser ? activeUser.name[0] : 'U'}
           </div>
           <div>
@@ -515,7 +515,7 @@ export default function FeedContainer({
             showInstallBtn ? (
               <button
                 onClick={handleInstallClick}
-                className="flex items-center gap-1.5 bg-accent-main hover:bg-accent-hover text-white dark:text-slate-950 text-[10px] font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-xl transition-all shadow-md shadow-accent-main/15 active:scale-95"
+                className="flex items-center gap-1.5 bg-accent-main hover:bg-accent-hover text-white text-[10px] font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-xl transition-all shadow-md shadow-accent-main/15 active:scale-95"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>Install App</span>
@@ -624,7 +624,7 @@ export default function FeedContainer({
 
           <button
             onClick={() => setShowCreateForm(!showCreateForm)}
-            className="flex items-center gap-2 bg-accent-main hover:bg-accent-hover text-white dark:text-slate-950 font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-accent-main/20 active:scale-95"
+            className="flex items-center gap-2 bg-accent-main hover:bg-accent-hover text-white font-semibold text-xs px-4 py-2.5 rounded-xl transition-all shadow-md shadow-accent-main/20 active:scale-95"
           >
             <Plus className="w-4 h-4" />
             <span>Create Post</span>
@@ -637,7 +637,7 @@ export default function FeedContainer({
             onClick={() => onUpdateViewMode('neighborhood')}
             className={`py-2 text-xs font-semibold rounded-xl transition-all duration-300 ${
               viewMode === 'neighborhood'
-                ? 'bg-accent-main text-white dark:text-slate-950 shadow-md shadow-accent-main/10'
+                ? 'bg-accent-main text-white shadow-md shadow-accent-main/10'
                 : 'text-text-muted hover:text-text-main'
             }`}
           >
@@ -647,7 +647,7 @@ export default function FeedContainer({
             onClick={() => onUpdateViewMode('district')}
             className={`py-2 text-xs font-semibold rounded-xl transition-all duration-300 ${
               viewMode === 'district'
-                ? 'bg-accent-main text-white dark:text-slate-950 shadow-md shadow-accent-main/10'
+                ? 'bg-accent-main text-white shadow-md shadow-accent-main/10'
                 : 'text-text-muted hover:text-text-main'
             }`}
           >
@@ -657,7 +657,7 @@ export default function FeedContainer({
             onClick={() => onUpdateViewMode('city')}
             className={`py-2 text-xs font-semibold rounded-xl transition-all duration-300 ${
               viewMode === 'city'
-                ? 'bg-accent-main text-white dark:text-slate-950 shadow-md shadow-accent-main/10'
+                ? 'bg-accent-main text-white shadow-md shadow-accent-main/10'
                 : 'text-text-muted hover:text-text-main'
             }`}
           >
@@ -875,7 +875,7 @@ export default function FeedContainer({
             <button
               type="submit"
               disabled={isPending}
-              className="bg-accent-main hover:bg-accent-hover disabled:bg-accent-main/50 text-white dark:text-slate-950 font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md shadow-accent-main/20"
+              className="bg-accent-main hover:bg-accent-hover disabled:bg-accent-main/50 text-white font-semibold text-xs px-5 py-2.5 rounded-xl transition-all shadow-md shadow-accent-main/20"
             >
               {!isOnline ? 'Queue Offline Draft' : (isPending ? 'Publishing...' : 'Publish Post')}
             </button>
@@ -1005,7 +1005,7 @@ export default function FeedContainer({
                         disabled={!isOnline}
                         className={`flex-1 py-2 px-4 rounded-xl border transition-all text-xs font-bold flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50 ${
                           post.userReaction === 'object'
-                            ? 'bg-accent-main border-transparent text-white dark:text-slate-950 hover:bg-accent-hover shadow-md shadow-accent-main/10'
+                            ? 'bg-accent-main border-transparent text-white hover:bg-accent-hover shadow-md shadow-accent-main/10'
                             : 'bg-accent-muted border-accent-main/20 text-accent-main hover:bg-accent-main/10'
                         }`}
                       >
