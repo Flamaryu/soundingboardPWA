@@ -196,7 +196,7 @@ export default function DashboardContainer({
 
             <button
               onClick={handleGeolocation}
-              className="bg-accent-main hover:bg-accent-hover text-white font-semibold text-xs px-4 py-2.5 rounded-2xl transition-all shadow-md shadow-accent-main/10 flex items-center gap-1.5 active:scale-95"
+              className="bg-accent-main hover:bg-accent-hover text-white dark:text-slate-950 font-semibold text-xs px-4 py-2.5 rounded-2xl transition-all shadow-md shadow-accent-main/10 flex items-center gap-1.5 active:scale-95"
               title="Use Geolocation"
             >
               <Navigation className="w-3.5 h-3.5" />
@@ -264,7 +264,7 @@ export default function DashboardContainer({
           onClick={() => setMobileTab('feed')}
           className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-95 flex items-center gap-1.5 ${
             mobileTab === 'feed'
-              ? 'bg-accent-main text-white shadow-md shadow-accent-main/15'
+              ? 'bg-accent-main text-white dark:text-slate-950 shadow-md shadow-accent-main/15'
               : 'text-text-muted hover:text-text-main'
           }`}
         >
@@ -274,7 +274,7 @@ export default function DashboardContainer({
           onClick={() => setMobileTab('map')}
           className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-95 flex items-center gap-1.5 ${
             mobileTab === 'map'
-              ? 'bg-accent-main text-white shadow-md shadow-accent-main/15'
+              ? 'bg-accent-main text-white dark:text-slate-950 shadow-md shadow-accent-main/15'
               : 'text-text-muted hover:text-text-main'
           }`}
         >

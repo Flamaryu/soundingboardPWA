@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (.dark &);
+
 :root {
   --background: #FDFBF7; /* Light Canvas Background */
   --card-bg: #F5F2EB; /* Light Card / Container Background */
