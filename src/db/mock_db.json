@@ -984,7 +984,8 @@
       "userType": "business",
       "userId": 2,
       "neighborhoodId": 4,
-      "createdAt": "2026-06-03T04:16:05.679Z"
+      "createdAt": "2026-06-03T04:16:05.679Z",
+      "likes": 1
     },
     {
       "id": 3,
@@ -1018,6 +1019,14 @@
       "userId": 4,
       "neighborhoodId": 8,
       "createdAt": "2026-06-03T04:16:05.679Z"
+    }
+  ],
+  "postReactions": [
+    {
+      "id": 1,
+      "postId": 2,
+      "userId": 3,
+      "type": "like"
     }
   ]
 }

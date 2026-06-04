@@ -137,8 +137,15 @@ export default function DashboardContainer({
     }
   }
 
+  const [mobileTab, setMobileTab] = useState<'feed' | 'map'>('feed')
+
   return (
-    <div className="flex flex-col gap-8 w-full max-w-7xl mx-auto px-4 md:px-6 py-6 flex-1">
+    <div className="flex flex-col gap-8 w-full max-w-7xl mx-auto px-4 md:px-6 py-6 flex-1 pb-24 lg:pb-6">
+      {/* Top-level Page Loading Indicator (for smooth route transitions) */}
+      {isPending && (
+        <div className="fixed top-0 left-0 right-0 h-1 bg-accent-main animate-pulse z-[9999]" />
+      )}
+
       {/* Dynamic Header HUD banner */}
       <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-panel-border pb-6">
         <div>
@@ -216,7 +223,7 @@ export default function DashboardContainer({
       {/* Main Split Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start flex-1">
         {/* Left Side: Dynamic Feeds (7 Cols) */}
-        <section className="lg:col-span-7 flex flex-col gap-6 w-full">
+        <section className={`lg:col-span-7 flex flex-col gap-6 w-full ${mobileTab === 'feed' ? 'block' : 'hidden lg:flex'}`}>
           <FeedContainer
             posts={feedPosts}
             activeUser={activeUser}
@@ -235,7 +242,7 @@ export default function DashboardContainer({
         </section>
 
         {/* Right Side: Interactive Map Visuals (5 Cols) */}
-        <aside className="lg:col-span-5 w-full h-[550px] lg:h-[700px] lg:sticky lg:top-6">
+        <aside className={`lg:col-span-5 w-full h-[550px] lg:h-[700px] lg:sticky lg:top-6 ${mobileTab === 'map' ? 'block' : 'hidden lg:block'}`}>
           <InteractiveMap
             neighborhoods={neighborhoods}
             businesses={mockUsers.filter((u: any) => u.role === 'business')}
@@ -249,6 +256,30 @@ export default function DashboardContainer({
             onMapClickCoordinates={handleMapClickCoordinates}
           />
         </aside>
+      </div>
+
+      {/* Mobile Sticky Tab Toggle Navigation (Visible only on mobile/tablet viewports) */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 lg:hidden flex bg-panel-bg border border-panel-border backdrop-blur-md rounded-2xl p-1.5 shadow-2xl gap-1.5">
+        <button
+          onClick={() => setMobileTab('feed')}
+          className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-95 flex items-center gap-1.5 ${
+            mobileTab === 'feed'
+              ? 'bg-accent-main text-white shadow-md shadow-accent-main/15'
+              : 'text-text-muted hover:text-text-main'
+          }`}
+        >
+          📰 Board Feed
+        </button>
+        <button
+          onClick={() => setMobileTab('map')}
+          className={`px-5 py-2.5 text-xs font-bold rounded-xl transition-all active:scale-95 flex items-center gap-1.5 ${
+            mobileTab === 'map'
+              ? 'bg-accent-main text-white shadow-md shadow-accent-main/15'
+              : 'text-text-muted hover:text-text-main'
+          }`}
+        >
+          🗺️ Interactive Map
+        </button>
       </div>
     </div>
   )

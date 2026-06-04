@@ -193,6 +193,7 @@ export default function FeedContainer({
   const [isIOS, setIsIOS] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
   const [showManualInstall, setShowManualInstall] = useState(false)
+  const [isInstalled, setIsInstalled] = useState(false)
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -201,6 +202,13 @@ export default function FeedContainer({
       const mobile = /Mobi|Android/i.test(ua) || ios
       setIsIOS(ios)
       setIsMobile(mobile)
+
+      // Standalone checks
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone
+      const isCachedInstalled = localStorage.getItem('pwa_installed') === 'true'
+      if (isStandalone || isCachedInstalled) {
+        setIsInstalled(true)
+      }
     }
   }, [])
 
@@ -210,13 +218,36 @@ export default function FeedContainer({
   
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      // If already evaluated as standalone, skip prompts
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (navigator as any).standalone
+      if (isStandalone) {
+        setIsInstalled(true)
+        return
+      }
+
       const handler = (e: any) => {
         e.preventDefault()
+        // If beforeinstallprompt fired, it means the app is not installed, so clean up cache if any
+        localStorage.removeItem('pwa_installed')
+        setIsInstalled(false)
         setDeferredPrompt(e)
         setShowInstallBtn(true)
       }
+
+      const handleAppInstalled = () => {
+        console.log('🎉 PWA successfully installed.')
+        localStorage.setItem('pwa_installed', 'true')
+        setIsInstalled(true)
+        setShowInstallBtn(false)
+        setDeferredPrompt(null)
+      }
+
       window.addEventListener('beforeinstallprompt', handler)
-      return () => window.removeEventListener('beforeinstallprompt', handler)
+      window.addEventListener('appinstalled', handleAppInstalled)
+      return () => {
+        window.removeEventListener('beforeinstallprompt', handler)
+        window.removeEventListener('appinstalled', handleAppInstalled)
+      }
     }
   }, [])
 
@@ -226,6 +257,8 @@ export default function FeedContainer({
     deferredPrompt.userChoice.then((choiceResult: any) => {
       if (choiceResult.outcome === 'accepted') {
         console.log('PWA installation accepted.')
+        localStorage.setItem('pwa_installed', 'true')
+        setIsInstalled(true)
       }
       setDeferredPrompt(null)
       setShowInstallBtn(false)
@@ -478,24 +511,26 @@ export default function FeedContainer({
         {/* Network & PWA Install Controls */}
         <div className="flex items-center gap-4">
           {/* Custom Install Button (Native Android/Chrome Trigger) */}
-          {showInstallBtn ? (
-            <button
-              onClick={handleInstallClick}
-              className="flex items-center gap-1.5 bg-accent-main hover:bg-accent-hover text-white text-[10px] font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-xl transition-all shadow-md shadow-accent-main/15 active:scale-95"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Install App</span>
-            </button>
-          ) : (
-            /* Show manual install guide toggle for mobile devices when SSL/safari prevents automatic prompt */
-            isMobile && (
+          {!isInstalled && (
+            showInstallBtn ? (
               <button
-                onClick={() => setShowManualInstall(!showManualInstall)}
-                className="flex items-center gap-1 bg-panel-bg border border-panel-border text-accent-main hover:bg-bg-muted text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl transition-all active:scale-95"
+                onClick={handleInstallClick}
+                className="flex items-center gap-1.5 bg-accent-main hover:bg-accent-hover text-white text-[10px] font-bold uppercase tracking-wider px-3.5 py-1.5 rounded-xl transition-all shadow-md shadow-accent-main/15 active:scale-95"
               >
-                <Info className="w-3.5 h-3.5" />
-                <span>How to Install</span>
+                <Download className="w-3.5 h-3.5" />
+                <span>Install App</span>
               </button>
+            ) : (
+              /* Show manual install guide toggle for mobile devices when SSL/safari prevents automatic prompt */
+              isMobile && (
+                <button
+                  onClick={() => setShowManualInstall(!showManualInstall)}
+                  className="flex items-center gap-1 bg-panel-bg border border-panel-border text-accent-main hover:bg-bg-muted text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-xl transition-all active:scale-95"
+                >
+                  <Info className="w-3.5 h-3.5" />
+                  <span>How to Install</span>
+                </button>
+              )
             )
           )}
 
@@ -541,7 +576,7 @@ export default function FeedContainer({
       </div>
 
       {/* Manual Mobile Installation Instructions Box */}
-      {showManualInstall && isMobile && (
+      {showManualInstall && isMobile && !isInstalled && (
         <div className="bg-panel-bg border border-panel-border p-5 rounded-3xl shadow-xl flex flex-col gap-3 animate-fadeIn">
           <h3 className="text-xs font-bold text-accent-main uppercase tracking-wider flex items-center gap-1.5">
             <Download className="w-4 h-4" /> Install Wilmington Sounding Board

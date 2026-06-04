@@ -101,6 +101,141 @@ export async function getPlanningDistricts() {
   }
 }
 
+// Helper to calculate Euclidean distance from a point to a line segment
+function distToSegmentSquared(p: [number, number], v: [number, number], w: [number, number]): number {
+  const l2 = (v[0] - w[0])**2 + (v[1] - w[1])**2
+  if (l2 === 0) return (p[0] - v[0])**2 + (p[1] - v[1])**2
+  let t = ((p[0] - v[0]) * (w[0] - v[0]) + (p[1] - v[1]) * (w[1] - v[1])) / l2
+  t = Math.max(0, Math.min(1, t))
+  return (p[0] - (v[0] + t * (w[0] - v[0])))**2 + (p[1] - (v[1] + t * (w[1] - v[1])))**2
+}
+
+function distToSegment(p: [number, number], v: [number, number], w: [number, number]): number {
+  return Math.sqrt(distToSegmentSquared(p, v, w))
+}
+
+// Helper to calculate minimum Euclidean distance from a point to a MultiPolygon boundary
+function distToMultiPolygon(p: [number, number], coords: number[][][][]): number {
+  let minDistance = Infinity
+  for (const polygon of coords) {
+    if (polygon.length > 0) {
+      const outerRing = polygon[0]
+      for (let i = 0; i < outerRing.length - 1; i++) {
+        const d = distToSegment(p, outerRing[i] as [number, number], outerRing[i+1] as [number, number])
+        if (d < minDistance) {
+          minDistance = d
+        }
+      }
+    }
+  }
+  return minDistance
+}
+
+// Helper to calculate centroid of a MultiPolygon
+function getCentroid(coords: number[][][][]): [number, number] {
+  let totalLng = 0
+  let totalLat = 0
+  let count = 0
+  for (const polygon of coords) {
+    if (polygon.length > 0) {
+      const outerRing = polygon[0]
+      for (const pt of outerRing) {
+        totalLng += pt[0]
+        totalLat += pt[1]
+        count++
+      }
+    }
+  }
+  return count > 0 ? [totalLng / count, totalLat / count] : [0, 0]
+}
+
+// Main logic for finding the closest neighborhood with district-based tie-breaker
+function findClosestNeighborhood(
+  lng: number,
+  lat: number,
+  neighborhoods: any[],
+  planningDistricts: any[]
+): ResolvedNeighborhood {
+  const userPt: [number, number] = [lng, lat]
+
+  // 1. First, check if the point is inside any neighborhood
+  for (const nh of neighborhoods) {
+    if (nh.boundary && isPointInMultiPolygon(userPt, nh.boundary.coordinates)) {
+      const district = planningDistricts.find((d: any) => d.id === nh.districtId)
+      return {
+        id: nh.id,
+        name: nh.name,
+        districtId: nh.districtId,
+        districtName: district ? district.name : 'Unknown'
+      }
+    }
+  }
+
+  // 2. If outside all, calculate distance to each neighborhood boundary
+  const nhCentroids = new Map<number, [number, number]>()
+  const nhDistances = neighborhoods.map((nh) => {
+    const boundary = nh.boundary
+    const centroid = getCentroid(boundary.coordinates)
+    nhCentroids.set(nh.id, centroid)
+
+    const dist = distToMultiPolygon(userPt, boundary.coordinates)
+    return { nh, dist }
+  })
+
+  // 3. Compute centroids of planning districts (average centroid of all neighborhoods inside the district)
+  const districtCentroids = new Map<number, [number, number]>()
+  const districtGroups = new Map<number, [number, number][]>()
+
+  neighborhoods.forEach((nh) => {
+    const centroid = nhCentroids.get(nh.id) || [0, 0]
+    if (!districtGroups.has(nh.districtId)) {
+      districtGroups.set(nh.districtId, [])
+    }
+    districtGroups.get(nh.districtId)!.push(centroid)
+  })
+
+  districtGroups.forEach((points, distId) => {
+    let sumLng = 0
+    let sumLat = 0
+    points.forEach((pt) => {
+      sumLng += pt[0]
+      sumLat += pt[1]
+    })
+    districtCentroids.set(distId, [sumLng / points.length, sumLat / points.length])
+  })
+
+  // Helper to calculate Euclidean distance between two points
+  const distance = (p1: [number, number], p2: [number, number]) => {
+    return Math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+  }
+
+  // Sort neighborhoods:
+  // - Primary: distance to neighborhood boundary (dist)
+  // - Secondary: distance from user to overall planning district centroid (tie-breaker)
+  const sorted = nhDistances.sort((a, b) => {
+    const diff = a.dist - b.dist
+    // Tolerance for floating point equality
+    if (Math.abs(diff) < 1e-9) {
+      const distCentroidA = districtCentroids.get(a.nh.districtId) || [0, 0]
+      const distCentroidB = districtCentroids.get(b.nh.districtId) || [0, 0]
+      const distToA = distance(userPt, distCentroidA)
+      const distToB = distance(userPt, distCentroidB)
+      return distToA - distToB
+    }
+    return diff
+  })
+
+  const bestNh = sorted[0].nh
+  const district = planningDistricts.find((d: any) => d.id === bestNh.districtId)
+
+  return {
+    id: bestNh.id,
+    name: bestNh.name,
+    districtId: bestNh.districtId,
+    districtName: district ? district.name : 'Unknown'
+  }
+}
+
 // Find neighborhood containing coordinates [lng, lat]
 export async function resolveCoordinates(lng: number, lat: number): Promise<ResolvedNeighborhood> {
   const defaultFallback: ResolvedNeighborhood = {
@@ -112,47 +247,34 @@ export async function resolveCoordinates(lng: number, lat: number): Promise<Reso
 
   if (isMockDb()) {
     const mockDb = readMockDb()
-    if (!mockDb) return defaultFallback
-
-    // Loop through neighborhoods and check if point is inside MultiPolygon boundary
-    for (const nh of mockDb.neighborhoods) {
-      if (nh.boundary && isPointInMultiPolygon([lng, lat], nh.boundary.coordinates)) {
-        const district = mockDb.planningDistricts.find((d: any) => d.id === nh.districtId)
-        return {
-          id: nh.id,
-          name: nh.name,
-          districtId: nh.districtId,
-          districtName: district ? district.name : 'Unknown'
-        }
-      }
-    }
-    return defaultFallback
+    if (!mockDb || !mockDb.neighborhoods || mockDb.neighborhoods.length === 0) return defaultFallback
+    return findClosestNeighborhood(lng, lat, mockDb.neighborhoods, mockDb.planningDistricts || [])
   }
 
   try {
-    const query = sql`
+    const nhRows = await db.execute(sql`
       SELECT 
         n.id, 
         n.name, 
-        n.district_id as "districtId",
+        n.district_id as "districtId", 
+        ST_AsGeoJSON(n.boundary) as boundary,
         d.name as "districtName"
       FROM neighborhoods n
       JOIN planning_districts d ON n.district_id = d.id
-      WHERE ST_Contains(n.boundary, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326))
-      LIMIT 1
-    `
-    const result = await db.execute(query)
+    `)
     
-    if (result.rows && result.rows.length > 0) {
-      const match = result.rows[0]
-      return {
-        id: match.id,
-        name: match.name,
-        districtId: match.districtId,
-        districtName: match.districtName
-      }
-    }
-    return defaultFallback
+    const parsedNeighborhoods = nhRows.rows.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      districtId: row.districtId,
+      districtName: row.districtName,
+      boundary: JSON.parse(row.boundary)
+    }))
+
+    const districts = await db.select().from(schema.planningDistricts)
+
+    if (parsedNeighborhoods.length === 0) return defaultFallback
+    return findClosestNeighborhood(lng, lat, parsedNeighborhoods, districts)
   } catch (err) {
     console.error('Failed to resolve coordinate in Postgres:', err)
     markDbAsFailed()
@@ -164,20 +286,8 @@ export async function resolveCoordinates(lng: number, lat: number): Promise<Reso
 // Run the mock calculation if Postgres query failed
 function resolveCoordinatesMockFallback(lng: number, lat: number, fallback: ResolvedNeighborhood): ResolvedNeighborhood {
   const mockDb = readMockDb()
-  if (!mockDb) return fallback
-  
-  for (const nh of mockDb.neighborhoods) {
-    if (nh.boundary && isPointInMultiPolygon([lng, lat], nh.boundary.coordinates)) {
-      const district = mockDb.planningDistricts.find((d: any) => d.id === nh.districtId)
-      return {
-        id: nh.id,
-        name: nh.name,
-        districtId: nh.districtId,
-        districtName: district ? district.name : 'Unknown'
-      }
-    }
-  }
-  return fallback
+  if (!mockDb || !mockDb.neighborhoods || mockDb.neighborhoods.length === 0) return fallback
+  return findClosestNeighborhood(lng, lat, mockDb.neighborhoods, mockDb.planningDistricts || [])
 }
 
 // Geocode a text address into coordinates, then resolve its neighborhood

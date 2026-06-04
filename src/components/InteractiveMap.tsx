@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { MapPin, ZoomIn, ZoomOut, RefreshCw, Compass } from 'lucide-react'
 
 // Projection boundary box for Wilmington
@@ -44,6 +44,118 @@ export default function InteractiveMap({
   const [zoomLevel, setZoomLevel] = useState<number>(1)
   const [panOffset, setPanOffset] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
+
+  const svgRef = useRef<SVGSVGElement>(null)
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null)
+  const initialPinchDistRef = useRef<number | null>(null)
+  const initialZoomRef = useRef<number>(1)
+
+  // References to keep state fresh in touch handler closures without re-binding
+  const stateRef = useRef({
+    zoomLevel,
+    panOffset,
+    isDragging
+  })
+  
+  useEffect(() => {
+    stateRef.current.zoomLevel = zoomLevel
+    stateRef.current.panOffset = panOffset
+    stateRef.current.isDragging = isDragging
+  }, [zoomLevel, panOffset, isDragging])
+
+  // Drag start helper
+  const startDrag = (clientX: number, clientY: number) => {
+    setIsDragging(false)
+    dragStartRef.current = {
+      x: clientX - stateRef.current.panOffset.x,
+      y: clientY - stateRef.current.panOffset.y
+    }
+  }
+
+  // Drag move helper
+  const moveDrag = (clientX: number, clientY: number) => {
+    if (!dragStartRef.current) return
+    setIsDragging(true)
+    const newX = clientX - dragStartRef.current.x
+    const newY = clientY - dragStartRef.current.y
+    setPanOffset({ x: newX, y: newY })
+  }
+
+  // Drag end helper
+  const endDrag = () => {
+    dragStartRef.current = null
+    setTimeout(() => {
+      setIsDragging(false)
+    }, 50)
+  }
+
+  // Desktop Mouse Handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return // Left-click only
+    startDrag(e.clientX, e.clientY)
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    moveDrag(e.clientX, e.clientY)
+  }
+
+  const handleMouseUp = () => {
+    endDrag()
+  }
+
+  const handleMouseLeave = () => {
+    endDrag()
+  }
+
+  // Mobile Passive Touch Event Listeners (prevents scrolling lag)
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0]
+        startDrag(touch.clientX, touch.clientY)
+      } else if (e.touches.length === 2) {
+        // Pinch to zoom start
+        const t1 = e.touches[0]
+        const t2 = e.touches[1]
+        const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY)
+        initialPinchDistRef.current = dist
+        initialZoomRef.current = stateRef.current.zoomLevel
+        dragStartRef.current = null // cancel panning
+      }
+    }
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1 && dragStartRef.current) {
+        const touch = e.touches[0]
+        moveDrag(touch.clientX, touch.clientY)
+      } else if (e.touches.length === 2 && initialPinchDistRef.current) {
+        const t1 = e.touches[0]
+        const t2 = e.touches[1]
+        const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY)
+        const scale = dist / initialPinchDistRef.current
+        const newZoom = Math.max(0.8, Math.min(3, initialZoomRef.current * scale))
+        setZoomLevel(newZoom)
+      }
+    }
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      endDrag()
+      initialPinchDistRef.current = null
+    }
+
+    svg.addEventListener('touchstart', handleTouchStart, { passive: true })
+    svg.addEventListener('touchmove', handleTouchMove, { passive: true })
+    svg.addEventListener('touchend', handleTouchEnd, { passive: true })
+
+    return () => {
+      svg.removeEventListener('touchstart', handleTouchStart)
+      svg.removeEventListener('touchmove', handleTouchMove)
+      svg.removeEventListener('touchend', handleTouchEnd)
+    }
+  }, [])
   
   // Hover & Tooltip State
   const [hoveredNh, setHoveredNh] = useState<NeighborhoodData | null>(null)
@@ -195,7 +307,7 @@ export default function InteractiveMap({
   return (
     <div className="relative w-full h-[500px] lg:h-full min-h-[400px] bg-map-bg border border-panel-border rounded-3xl overflow-hidden glass-panel flex flex-col">
       {/* HUD Header */}
-      <div className="absolute top-4 left-4 right-4 z-10 flex justify-between items-center pointer-events-none">
+      <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-center pointer-events-none animate-fadeIn">
         <div className="bg-panel-bg border border-panel-border backdrop-blur-md px-4 py-2 rounded-2xl pointer-events-auto flex items-center gap-3">
           <Compass className="w-5 h-5 text-accent-main animate-spin-slow" />
           <div>
@@ -222,8 +334,14 @@ export default function InteractiveMap({
 
       {/* SVG Viewport */}
       <svg
+        ref={svgRef}
         viewBox="0 0 800 600"
-        className="w-full h-full cursor-crosshair select-none bg-[radial-gradient(ellipse_at_center,var(--map-grid)_0%,rgba(0,0,0,0)_80%)]"
+        className="w-full h-full cursor-grab active:cursor-grabbing select-none bg-[radial-gradient(ellipse_at_center,var(--map-grid)_0%,rgba(0,0,0,0)_80%)]"
+        style={{ touchAction: 'none' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
         onClick={handleMapClick}
       >
         {/* Vector Grid Overlay */}
@@ -391,22 +509,22 @@ export default function InteractiveMap({
       </svg>
 
       {/* Map HUD Controls */}
-      <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
+      <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-20">
         <button
           onClick={() => setZoomLevel(prev => Math.min(prev + 0.2, 3))}
-          className="w-10 h-10 rounded-xl bg-panel-bg border border-panel-border text-accent-main flex items-center justify-center hover:bg-bg-muted transition-all"
+          className="w-10 h-10 rounded-xl bg-panel-bg border border-panel-border text-accent-main flex items-center justify-center hover:bg-bg-muted transition-all active:scale-95 pointer-events-auto"
         >
           <ZoomIn className="w-4 h-4" />
         </button>
         <button
           onClick={() => setZoomLevel(prev => Math.max(prev - 0.2, 0.8))}
-          className="w-10 h-10 rounded-xl bg-panel-bg border border-panel-border text-accent-main flex items-center justify-center hover:bg-bg-muted transition-all"
+          className="w-10 h-10 rounded-xl bg-panel-bg border border-panel-border text-accent-main flex items-center justify-center hover:bg-bg-muted transition-all active:scale-95 pointer-events-auto"
         >
           <ZoomOut className="w-4 h-4" />
         </button>
       </div>
 
-      <div className="absolute bottom-4 left-4 z-10 bg-panel-bg border border-panel-border backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] text-text-muted flex items-center gap-1.5 font-medium shadow-md">
+      <div className="absolute bottom-4 left-4 z-20 bg-panel-bg border border-panel-border backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] text-text-muted flex items-center gap-1.5 font-medium shadow-md pointer-events-auto">
         <MapPin className="w-3.5 h-3.5 text-accent-main" />
         <span>Click on vector grids to mock geocode location coordinates</span>
       </div>
