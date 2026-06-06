@@ -30,6 +30,10 @@ export default function LeafletMap({
   const businessGroupRef = useRef<L.LayerGroup | null>(null)
   const userMarkerRef = useRef<L.Marker | null>(null)
   
+  // Track last processed props to prevent zoom resetting on manual pans/zooms
+  const lastViewModeRef = useRef(viewMode)
+  const lastActiveNhIdRef = useRef(activeNeighborhoodId)
+  
   // Track last internal update to prevent feedback loops
   const isUpdatingFromPropsRef = useRef(false)
 
@@ -81,6 +85,18 @@ export default function LeafletMap({
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
+
+    const viewModeChanged = lastViewModeRef.current !== viewMode
+    const nhChanged = lastActiveNhIdRef.current !== activeNeighborhoodId
+
+    // Update refs for last processed values
+    lastViewModeRef.current = viewMode
+    lastActiveNhIdRef.current = activeNeighborhoodId
+
+    // Skip map camera refit if manual pan/zoom triggered the state change
+    if (!viewModeChanged && !nhChanged) {
+      return
+    }
 
     isUpdatingFromPropsRef.current = true
 

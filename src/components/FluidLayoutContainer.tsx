@@ -22,6 +22,7 @@ import {
   ImageIcon
 } from 'lucide-react'
 import { reactToPost, createPost } from '@/app/actions/posts'
+import { resolveAddress } from '@/app/actions/neighborhood'
 
 // Dynamically import Leaflet map to avoid server-side rendering issues
 const DynamicLeafletMap = dynamic(() => import('./LeafletMap'), {
@@ -76,6 +77,32 @@ export default function FluidLayoutContainer({
   const [posts, setPosts] = useState<any[]>([])
   const [loadingPosts, setLoadingPosts] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Address geocoding states
+  const [addressInput, setAddressInput] = useState('')
+  const [geoSuccessMessage, setGeoSuccessMessage] = useState('')
+  const [geoError, setGeoError] = useState('')
+
+  const handleAddressSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setGeoError('')
+    setGeoSuccessMessage('')
+    if (!addressInput.trim()) return
+
+    try {
+      const res = await resolveAddress(addressInput)
+      setAddressInput('')
+      setGeoSuccessMessage(`Located: ${res.neighborhood.name}!`)
+      
+      // Center map on geocoded location coordinates
+      setMapCenter({ lng: res.lng, lat: res.lat })
+      setActiveNhId(res.neighborhood.id)
+      setViewMode('neighborhood')
+      setMapZoom(14)
+    } catch (err) {
+      setGeoError('Could not geocode address. Try Trolley Square or Highlands.')
+    }
+  }
   
   // Bottom Sheet Draggable States
   const [sheetState, setSheetState] = useState<DragState>('half')
@@ -337,7 +364,13 @@ export default function FluidLayoutContainer({
             <UserIcon className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
             <select
               value={activeUserId}
-              onChange={(e) => setActiveUserId(Number(e.target.value))}
+              onChange={(e) => {
+                const val = Number(e.target.value)
+                setActiveUserId(val)
+                const current = new URLSearchParams(window.location.search)
+                current.set('user', String(val))
+                router.push(`/?${current.toString()}`)
+              }}
               className="bg-transparent text-[11px] text-white font-bold border-none outline-none pr-3 cursor-pointer"
             >
               {mockUsers.map(u => (
@@ -414,6 +447,38 @@ export default function FluidLayoutContainer({
               )
             })}
           </div>
+
+          {/* Address / Landmark Geocoder Search Form */}
+          <form onSubmit={handleAddressSubmit} className="flex gap-2.5 mb-4 select-none">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="Enter address or landmark (e.g. Trolley Square)..."
+                value={addressInput}
+                onChange={(e) => setAddressInput(e.target.value)}
+                className="w-full bg-[#0b132b] border border-slate-700/50 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-[#d90429]"
+              />
+              <MapPin className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+            </div>
+            <button
+              type="submit"
+              className="bg-slate-800 border border-slate-700/50 text-[#00f5d4] hover:bg-slate-750 text-xs font-semibold px-3 py-2 rounded-xl transition-all active:scale-95 shadow-md"
+            >
+              Go
+            </button>
+          </form>
+
+          {/* Geocoding Message Banners */}
+          {geoError && (
+            <div className="text-[10px] text-red-400 bg-red-950/20 border border-red-500/10 px-3 py-1.5 rounded-xl font-medium mb-3">
+              ⚠️ {geoError}
+            </div>
+          )}
+          {geoSuccessMessage && (
+            <div className="text-[10px] text-emerald-400 bg-emerald-950/20 border border-emerald-500/10 px-3 py-1.5 rounded-xl font-medium mb-3">
+              📍 {geoSuccessMessage}
+            </div>
+          )}
 
           {/* SEARCH & ADD ROW */}
           {(flags.enableSearch || flags.enableCreatePost) && (
