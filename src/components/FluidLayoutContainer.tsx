@@ -40,6 +40,16 @@ interface FluidLayoutContainerProps {
   mockUsers: any[]
   initialNhId: number
   initialUserId: number
+  flags: {
+    enableCreatePost: boolean
+    enableReactions: boolean
+    enableCivicProposals: boolean
+    enableAccountSwitcher: boolean
+    enableSearch: boolean
+    enableVideoShorts: boolean
+    enableStories: boolean
+    enableMiniblogs: boolean
+  }
 }
 
 type DragState = 'collapsed' | 'half' | 'expanded'
@@ -49,7 +59,8 @@ export default function FluidLayoutContainer({
   activeUser,
   mockUsers,
   initialNhId,
-  initialUserId
+  initialUserId,
+  flags
 }: FluidLayoutContainerProps) {
   const router = useRouter()
   const [activeUserId, setActiveUserId] = useState(initialUserId)
@@ -271,8 +282,14 @@ export default function FluidLayoutContainer({
     setTranslateY(0) // Let CSS transition handle it based on snap state
   }
 
-  // Filter posts client-side for search queries
+  // Filter posts client-side for search queries and enabled post types
   const filteredPosts = posts.filter(p => {
+    if (p.type === 'miniblog' && !flags.enableMiniblogs) return false
+    if (p.type === 'story' && !flags.enableStories) return false
+    if (p.type === 'short' && !flags.enableVideoShorts) return false
+    
+    if (!flags.enableSearch) return true
+    
     const q = searchQuery.toLowerCase()
     return p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q)
   })
@@ -315,20 +332,27 @@ export default function FluidLayoutContainer({
         </div>
 
         {/* User Account Switcher Dropdown */}
-        <div className="bg-[#1c2541]/95 border border-slate-700/50 backdrop-blur-md p-1 rounded-2xl pointer-events-auto shadow-xl flex items-center gap-1.5">
-          <UserIcon className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
-          <select
-            value={activeUserId}
-            onChange={(e) => setActiveUserId(Number(e.target.value))}
-            className="bg-transparent text-[11px] text-white font-bold border-none outline-none pr-3 cursor-pointer"
-          >
-            {mockUsers.map(u => (
-              <option key={u.id} value={u.id} className="bg-[#1c2541] text-white">
-                {u.name} ({u.role})
-              </option>
-            ))}
-          </select>
-        </div>
+        {flags.enableAccountSwitcher ? (
+          <div className="bg-[#1c2541]/95 border border-slate-700/50 backdrop-blur-md p-1 rounded-2xl pointer-events-auto shadow-xl flex items-center gap-1.5">
+            <UserIcon className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
+            <select
+              value={activeUserId}
+              onChange={(e) => setActiveUserId(Number(e.target.value))}
+              className="bg-transparent text-[11px] text-white font-bold border-none outline-none pr-3 cursor-pointer"
+            >
+              {mockUsers.map(u => (
+                <option key={u.id} value={u.id} className="bg-[#1c2541] text-white">
+                  {u.name} ({u.role})
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div className="bg-[#1c2541]/95 border border-slate-700/50 backdrop-blur-md px-3 py-1.5 rounded-2xl pointer-events-auto shadow-xl flex items-center gap-1.5 text-[11px] text-white font-bold">
+            <UserIcon className="w-3.5 h-3.5 text-slate-400 animate-pulse" />
+            <span>{currentUser.name}</span>
+          </div>
+        )}
       </div>
 
       {/* 2. Drag-snap Snappable Bottom Sheet */}
@@ -392,25 +416,31 @@ export default function FluidLayoutContainer({
           </div>
 
           {/* SEARCH & ADD ROW */}
-          <div className="flex gap-2.5 mb-4 select-none">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                placeholder="Search events, stories..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-[#0b132b] border border-slate-700/50 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-[#d90429]"
-              />
-              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
-            </div>
+          {(flags.enableSearch || flags.enableCreatePost) && (
+            <div className="flex gap-2.5 mb-4 select-none">
+              {flags.enableSearch && (
+                <div className="relative flex-1">
+                  <input
+                    type="text"
+                    placeholder="Search events, stories..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-[#0b132b] border border-slate-700/50 rounded-xl pl-9 pr-3 py-2 text-xs text-white focus:outline-none focus:border-[#d90429]"
+                  />
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-2.5" />
+                </div>
+              )}
 
-            <button
-              onClick={() => setShowCreateForm(!showCreateForm)}
-              className="bg-[#d90429] hover:bg-[#b00320] text-white rounded-xl px-4 py-2 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-md shadow-[#d90429]/15"
-            >
-              <Plus className="w-3.5 h-3.5" /> Create
-            </button>
-          </div>
+              {flags.enableCreatePost && (
+                <button
+                  onClick={() => setShowCreateForm(!showCreateForm)}
+                  className={`bg-[#d90429] hover:bg-[#b00320] text-white rounded-xl px-4 py-2 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-md shadow-[#d90429]/15 ${!flags.enableSearch ? 'w-full justify-center' : ''}`}
+                >
+                  <Plus className="w-3.5 h-3.5" /> Create
+                </button>
+              )}
+            </div>
+          )}
 
           {/* SCROLLABLE FEED LIST */}
           <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-4">
@@ -429,7 +459,11 @@ export default function FluidLayoutContainer({
                 )}
 
                 <div className="flex gap-1.5 bg-[#0b132b] p-0.5 rounded-lg border border-slate-700/30 w-fit">
-                  {(['miniblog', 'story', 'short'] as const).map((type) => (
+                  {([
+                    flags.enableMiniblogs && 'miniblog',
+                    flags.enableStories && 'story',
+                    flags.enableVideoShorts && 'short'
+                  ].filter(Boolean) as ('miniblog' | 'story' | 'short')[]).map((type) => (
                     <button
                       key={type}
                       type="button"
@@ -475,18 +509,20 @@ export default function FluidLayoutContainer({
                   </div>
                 )}
 
-                <div className="flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    id="fluid-isProposal"
-                    checked={isProposal}
-                    onChange={(e) => setIsProposal(e.target.checked)}
-                    className="w-3.5 h-3.5 rounded text-[#d90429] focus:ring-[#d90429] border-slate-700 bg-[#0b132b]"
-                  />
-                  <label htmlFor="fluid-isProposal" className="text-[10px] font-bold text-white cursor-pointer select-none">
-                    📢 Submit as Civic Community Proposal
-                  </label>
-                </div>
+                {flags.enableCivicProposals && (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      id="fluid-isProposal"
+                      checked={isProposal}
+                      onChange={(e) => setIsProposal(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-[#d90429] focus:ring-[#d90429] border-slate-700 bg-[#0b132b]"
+                    />
+                    <label htmlFor="fluid-isProposal" className="text-[10px] font-bold text-white cursor-pointer select-none">
+                      📢 Submit as Civic Community Proposal
+                    </label>
+                  </div>
+                )}
 
                 {formError && (
                   <div className="text-[10px] text-red-400 bg-red-950/20 border border-red-500/10 p-2.5 rounded-xl font-medium">
@@ -595,76 +631,78 @@ export default function FluidLayoutContainer({
                   )}
 
                   {/* Post Reactions */}
-                  <div className="border-t border-slate-800/80 pt-2.5 mt-1">
-                    {post.isProposal ? (
-                      <div className="flex flex-col gap-2 w-full">
-                        {/* Vote Split Ratio */}
-                        {(() => {
-                          const totalVotes = (post.seconds || 0) + (post.objections || 0)
-                          const agreePercent = totalVotes > 0 ? Math.round(((post.seconds || 0) / totalVotes) * 100) : 50
-                          return (
-                            <div className="flex flex-col gap-1 bg-[#0b132b] p-2 rounded-xl border border-slate-800">
-                              <div className="flex justify-between text-[9px] font-bold">
-                                <span className="text-emerald-400">🤝 Agree ({agreePercent}%)</span>
-                                <span className="text-[#d90429]">⚠️ Object ({100 - agreePercent}%)</span>
+                  {flags.enableReactions && (
+                    <div className="border-t border-slate-800/80 pt-2.5 mt-1">
+                      {post.isProposal && flags.enableCivicProposals ? (
+                        <div className="flex flex-col gap-2 w-full">
+                          {/* Vote Split Ratio */}
+                          {(() => {
+                            const totalVotes = (post.seconds || 0) + (post.objections || 0)
+                            const agreePercent = totalVotes > 0 ? Math.round(((post.seconds || 0) / totalVotes) * 100) : 50
+                            return (
+                              <div className="flex flex-col gap-1 bg-[#0b132b] p-2 rounded-xl border border-slate-800">
+                                <div className="flex justify-between text-[9px] font-bold">
+                                  <span className="text-emerald-400">🤝 Agree ({agreePercent}%)</span>
+                                  <span className="text-[#d90429]">⚠️ Object ({100 - agreePercent}%)</span>
+                                </div>
+                                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
+                                  <div className="h-full bg-emerald-500" style={{ width: `${agreePercent}%` }} />
+                                  <div className="h-full bg-[#d90429]" style={{ width: `${100 - agreePercent}%` }} />
+                                </div>
                               </div>
-                              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
-                                <div className="h-full bg-emerald-500" style={{ width: `${agreePercent}%` }} />
-                                <div className="h-full bg-[#d90429]" style={{ width: `${100 - agreePercent}%` }} />
-                              </div>
-                            </div>
-                          )
-                        })()}
+                            )
+                          })()}
 
-                        {/* Proposal Actions */}
-                        <div className="flex gap-2 w-full">
+                          {/* Proposal Actions */}
+                          <div className="flex gap-2 w-full">
+                            <button
+                              onClick={() => handleReact(post.id, 'second')}
+                              className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
+                                post.userReaction === 'second'
+                                  ? 'bg-emerald-500 border-transparent text-white'
+                                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                              }`}
+                            >
+                              🤝 Second Proposal ({post.seconds || 0})
+                            </button>
+                            <button
+                              onClick={() => handleReact(post.id, 'object')}
+                              className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
+                                post.userReaction === 'object'
+                                  ? 'bg-[#d90429] border-transparent text-white'
+                                  : 'bg-[#d90429]/10 border-[#d90429]/20 text-[#d90429]'
+                              }`}
+                            >
+                              ⚠️ Object ({post.objections || 0})
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2">
                           <button
-                            onClick={() => handleReact(post.id, 'second')}
+                            onClick={() => handleReact(post.id, 'like')}
                             className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
-                              post.userReaction === 'second'
-                                ? 'bg-emerald-500 border-transparent text-white'
-                                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                            }`}
-                          >
-                            🤝 Second Proposal ({post.seconds || 0})
-                          </button>
-                          <button
-                            onClick={() => handleReact(post.id, 'object')}
-                            className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
-                              post.userReaction === 'object'
+                              post.userReaction === 'like'
                                 ? 'bg-[#d90429] border-transparent text-white'
                                 : 'bg-[#d90429]/10 border-[#d90429]/20 text-[#d90429]'
                             }`}
                           >
-                            ⚠️ Object ({post.objections || 0})
+                            <Heart className="w-3.5 h-3.5" /> Like ({post.likes || 0})
+                          </button>
+                          <button
+                            onClick={() => handleReact(post.id, 'dislike')}
+                            className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
+                              post.userReaction === 'dislike'
+                                ? 'bg-slate-800 border-transparent text-white'
+                                : 'bg-slate-800/10 border-slate-700/25 text-slate-400'
+                            }`}
+                          >
+                            <ThumbsDown className="w-3.5 h-3.5" /> Dislike ({post.dislikes || 0})
                           </button>
                         </div>
-                      </div>
-                    ) : (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => handleReact(post.id, 'like')}
-                          className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
-                            post.userReaction === 'like'
-                              ? 'bg-[#d90429] border-transparent text-white'
-                              : 'bg-[#d90429]/10 border-[#d90429]/20 text-[#d90429]'
-                          }`}
-                        >
-                          <Heart className="w-3.5 h-3.5" /> Like ({post.likes || 0})
-                        </button>
-                        <button
-                          onClick={() => handleReact(post.id, 'dislike')}
-                          className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
-                            post.userReaction === 'dislike'
-                              ? 'bg-slate-800 border-transparent text-white'
-                              : 'bg-slate-800/10 border-slate-700/25 text-slate-400'
-                          }`}
-                        >
-                          <ThumbsDown className="w-3.5 h-3.5" /> Dislike ({post.dislikes || 0})
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  )}
                 </article>
               ))
             )}
