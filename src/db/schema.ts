@@ -14,6 +14,19 @@ export const geometry = customType<{ data: string; driverData: string }>({
   }
 })
 
+// Custom PostGIS Point Type
+export const geographyPoint = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return 'geography(Point, 4326)'
+  },
+  toDriver(value: string) {
+    return value
+  },
+  fromDriver(value: string) {
+    return value
+  }
+})
+
 export const states = pgTable('states', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
@@ -65,6 +78,7 @@ export const posts = pgTable('posts', {
   seconds: integer('seconds').default(0).notNull(),
   dislikes: integer('dislikes').default(0).notNull(),
   objections: integer('objections').default(0).notNull(),
+  location: geographyPoint('location'), // geographyPoint for ST_DWithin queries
 })
 
 // Drizzle relations
