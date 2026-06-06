@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { Outfit, Inter } from 'next/font/google'
 import './globals.css'
 import PWARegister from '@/components/PWARegister'
+import { Analytics } from '@vercel/analytics/next'
 
 const outfit = Outfit({
   subsets: ['latin'],
@@ -52,6 +53,7 @@ export default function RootLayout({
       <body className="min-h-full bg-bg-main text-text-main font-sans antialiased flex flex-col transition-colors duration-300">
         <PWARegister />
         {children}
+        <Analytics />
       </body>
     </html>
   )
