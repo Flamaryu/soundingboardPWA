@@ -39,6 +39,18 @@ export const cities = pgTable('cities', {
   stateId: integer('state_id').references(() => states.id).notNull(),
 })
 
+export const councilDistricts = pgTable('council_districts', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  boundary: geometry('boundary'), // stores spatial MultiPolygon coordinates
+})
+
+export const historicDistricts = pgTable('historic_districts', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  boundary: geometry('boundary'), // stores spatial MultiPolygon coordinates
+})
+
 export const planningDistricts = pgTable('planning_districts', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
@@ -56,7 +68,7 @@ export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
-  role: text('role', { enum: ['citizen', 'business'] }).notNull().default('citizen'),
+  role: text('role', { enum: ['citizen', 'business', 'nonprofit', 'political'] }).notNull().default('citizen'),
   address: text('address'),
   latitude: doublePrecision('latitude'),
   longitude: doublePrecision('longitude'),
@@ -69,7 +81,7 @@ export const posts = pgTable('posts', {
   content: text('content').notNull(), // Stories, Mini-blogs, Event text
   type: text('type', { enum: ['story', 'miniblog', 'short'] }).notNull(),
   mediaUrl: text('media_url'), // S3, CDN, YouTube, image links
-  userType: text('user_type', { enum: ['citizen', 'business'] }).notNull(),
+  userType: text('user_type', { enum: ['citizen', 'business', 'nonprofit', 'political'] }).notNull(),
   userId: integer('user_id').references(() => users.id).notNull(),
   neighborhoodId: integer('neighborhood_id').references(() => neighborhoods.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -79,6 +91,13 @@ export const posts = pgTable('posts', {
   dislikes: integer('dislikes').default(0).notNull(),
   objections: integer('objections').default(0).notNull(),
   location: geographyPoint('location'), // geographyPoint for ST_DWithin queries
+  councilDistrictId: integer('council_district_id').references(() => councilDistricts.id),
+  historicDistrictId: integer('historic_district_id').references(() => historicDistricts.id),
+  isBeacon: boolean('is_beacon').default(false).notNull(),
+  beaconExpiresAt: timestamp('beacon_expires_at'),
+  isPinned: boolean('is_pinned').default(false).notNull(),
+  pinnedDistrictId: integer('pinned_district_id').references(() => planningDistricts.id),
+  pinnedCouncilDistrictId: integer('pinned_council_district_id').references(() => councilDistricts.id),
 })
 
 // Drizzle relations
@@ -111,7 +130,17 @@ export const usersRelations = relations(users, ({ one, many }) => ({
 export const postsRelations = relations(posts, ({ one, many }) => ({
   user: one(users, { fields: [posts.userId], references: [users.id] }),
   neighborhood: one(neighborhoods, { fields: [posts.neighborhoodId], references: [neighborhoods.id] }),
+  councilDistrict: one(councilDistricts, { fields: [posts.councilDistrictId], references: [councilDistricts.id] }),
+  historicDistrict: one(historicDistricts, { fields: [posts.historicDistrictId], references: [historicDistricts.id] }),
   reactions: many(postReactions),
+}))
+
+export const councilDistrictsRelations = relations(councilDistricts, ({ many }) => ({
+  posts: many(posts),
+}))
+
+export const historicDistrictsRelations = relations(historicDistricts, ({ many }) => ({
+  posts: many(posts),
 }))
 
 export const postReactions = pgTable('post_reactions', {

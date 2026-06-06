@@ -112,7 +112,13 @@ export async function getFeedPosts(
           userName: schema.users.name,
           userRole: schema.users.role,
           neighborhoodName: schema.neighborhoods.name,
-          userReaction: schema.postReactions.type
+          userReaction: schema.postReactions.type,
+          councilDistrictId: schema.posts.councilDistrictId,
+          historicDistrictId: schema.posts.historicDistrictId,
+          isBeacon: schema.posts.isBeacon,
+          beaconExpiresAt: schema.posts.beaconExpiresAt,
+          isPinned: schema.posts.isPinned,
+          pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
         })
         .from(schema.posts)
         .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
@@ -160,7 +166,13 @@ export async function getFeedPosts(
           userName: schema.users.name,
           userRole: schema.users.role,
           neighborhoodName: schema.neighborhoods.name,
-          userReaction: schema.postReactions.type
+          userReaction: schema.postReactions.type,
+          councilDistrictId: schema.posts.councilDistrictId,
+          historicDistrictId: schema.posts.historicDistrictId,
+          isBeacon: schema.posts.isBeacon,
+          beaconExpiresAt: schema.posts.beaconExpiresAt,
+          isPinned: schema.posts.isPinned,
+          pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
         })
         .from(schema.posts)
         .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
@@ -190,7 +202,13 @@ export async function getFeedPosts(
           userName: schema.users.name,
           userRole: schema.users.role,
           neighborhoodName: schema.neighborhoods.name,
-          userReaction: schema.postReactions.type
+          userReaction: schema.postReactions.type,
+          councilDistrictId: schema.posts.councilDistrictId,
+          historicDistrictId: schema.posts.historicDistrictId,
+          isBeacon: schema.posts.isBeacon,
+          beaconExpiresAt: schema.posts.beaconExpiresAt,
+          isPinned: schema.posts.isPinned,
+          pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
         })
         .from(schema.posts)
         .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
@@ -250,6 +268,12 @@ export async function createPost(data: {
   userId: number
   neighborhoodId: number // where user is writing from
   isProposal?: boolean
+  councilDistrictId?: number
+  historicDistrictId?: number
+  isBeacon?: boolean
+  beaconExpiresAt?: string
+  isPinned?: boolean
+  pinnedCouncilDistrictId?: number
 }) {
   const createdAt = new Date().toISOString()
   
@@ -281,7 +305,13 @@ export async function createPost(data: {
       likes: 0,
       seconds: 0,
       dislikes: 0,
-      objections: 0
+      objections: 0,
+      councilDistrictId: data.councilDistrictId || null,
+      historicDistrictId: data.historicDistrictId || null,
+      isBeacon: data.isBeacon ?? false,
+      beaconExpiresAt: data.beaconExpiresAt || null,
+      isPinned: data.isPinned ?? false,
+      pinnedCouncilDistrictId: data.pinnedCouncilDistrictId || null
     }
 
     mockDb.posts.push(newPost)
@@ -324,7 +354,13 @@ export async function createPost(data: {
         likes: 0,
         seconds: 0,
         dislikes: 0,
-        objections: 0
+        objections: 0,
+        councilDistrictId: data.councilDistrictId || null,
+        historicDistrictId: data.historicDistrictId || null,
+        isBeacon: data.isBeacon ?? false,
+        beaconExpiresAt: data.beaconExpiresAt ? new Date(data.beaconExpiresAt) : null,
+        isPinned: data.isPinned ?? false,
+        pinnedCouncilDistrictId: data.pinnedCouncilDistrictId || null
       })
       .returning()
 
@@ -357,7 +393,13 @@ export async function createPost(data: {
       likes: 0,
       seconds: 0,
       dislikes: 0,
-      objections: 0
+      objections: 0,
+      councilDistrictId: data.councilDistrictId || null,
+      historicDistrictId: data.historicDistrictId || null,
+      isBeacon: data.isBeacon ?? false,
+      beaconExpiresAt: data.beaconExpiresAt || null,
+      isPinned: data.isPinned ?? false,
+      pinnedCouncilDistrictId: data.pinnedCouncilDistrictId || null
     }
     mockDb.posts.push(newPost)
     writeMockDb(mockDb)

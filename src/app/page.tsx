@@ -1,4 +1,4 @@
-import { getNeighborhoods } from '@/app/actions/neighborhood'
+import { getNeighborhoods, getCouncilDistricts, getHistoricDistricts } from '@/app/actions/neighborhood'
 import { getActiveUser, getMockUsers } from '@/app/actions/posts'
 import FluidLayoutContainer from '@/components/FluidLayoutContainer'
 import * as flags from '@/flags'
@@ -19,6 +19,8 @@ export default async function Home({ searchParams }: PageProps) {
 
   // Parallel data fetching on the server
   const neighborhoods = await getNeighborhoods()
+  const councilDistricts = await getCouncilDistricts()
+  const historicDistricts = await getHistoricDistricts()
   const activeUser = await getActiveUser(activeUserId)
   const mockUsers = await getMockUsers()
 
@@ -54,6 +56,8 @@ export default async function Home({ searchParams }: PageProps) {
     <main className="min-h-screen bg-[#0b132b]">
       <FluidLayoutContainer
         neighborhoods={neighborhoods}
+        councilDistricts={councilDistricts}
+        historicDistricts={historicDistricts}
         activeUser={activeUser}
         mockUsers={mockUsers}
         initialNhId={activeNhId}

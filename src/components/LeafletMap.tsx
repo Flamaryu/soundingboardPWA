@@ -6,21 +6,37 @@ import 'leaflet/dist/leaflet.css'
 
 interface LeafletMapProps {
   neighborhoods: any[]
+  councilDistricts: any[]
+  historicDistricts: any[]
   businesses: any[]
+  posts: any[]
   activeNeighborhoodId: number
-  viewMode: 'walking' | 'neighborhood' | 'district' | 'city'
+  activeCouncilDistrictId: number
+  activeHistoricDistrictId: number
+  viewMode: 'walking' | 'neighborhood' | 'district' | 'city' | 'council' | 'historic'
+  activeMapLayer: 'neighborhood' | 'council' | 'historic'
   userLocation: { lng: number; lat: number } | null
   onSelectNeighborhood: (id: number) => void
+  onSelectCouncilDistrict: (id: number) => void
+  onSelectHistoricDistrict: (id: number) => void
   onCameraChange: (center: { lng: number; lat: number }, zoom: number) => void
 }
 
 export default function LeafletMap({
-  neighborhoods,
-  businesses,
+  neighborhoods = [],
+  councilDistricts = [],
+  historicDistricts = [],
+  businesses = [],
+  posts = [],
   activeNeighborhoodId,
+  activeCouncilDistrictId,
+  activeHistoricDistrictId,
   viewMode,
+  activeMapLayer,
   userLocation,
   onSelectNeighborhood,
+  onSelectCouncilDistrict,
+  onSelectHistoricDistrict,
   onCameraChange
 }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -28,11 +44,14 @@ export default function LeafletMap({
   const geoJsonLayerRef = useRef<L.GeoJSON | null>(null)
   const walkingCircleRef = useRef<L.Circle | null>(null)
   const businessGroupRef = useRef<L.LayerGroup | null>(null)
+  const beaconGroupRef = useRef<L.LayerGroup | null>(null)
   const userMarkerRef = useRef<L.Marker | null>(null)
   
   // Track last processed props to prevent zoom resetting on manual pans/zooms
   const lastViewModeRef = useRef(viewMode)
   const lastActiveNhIdRef = useRef(activeNeighborhoodId)
+  const lastActiveCouncilIdRef = useRef(activeCouncilDistrictId)
+  const lastActiveHistoricIdRef = useRef(activeHistoricDistrictId)
   
   // Track last internal update to prevent feedback loops
   const isUpdatingFromPropsRef = useRef(false)
@@ -81,50 +100,86 @@ export default function LeafletMap({
     }
   }, [onCameraChange])
 
-  // Sync camera pan/zoom when viewMode or activeNeighborhoodId changes from parent
+  // Sync camera pan/zoom when viewMode or active IDs change from parent
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
     const viewModeChanged = lastViewModeRef.current !== viewMode
     const nhChanged = lastActiveNhIdRef.current !== activeNeighborhoodId
+    const councilChanged = lastActiveCouncilIdRef.current !== activeCouncilDistrictId
+    const historicChanged = lastActiveHistoricIdRef.current !== activeHistoricDistrictId
 
     // Update refs for last processed values
     lastViewModeRef.current = viewMode
     lastActiveNhIdRef.current = activeNeighborhoodId
+    lastActiveCouncilIdRef.current = activeCouncilDistrictId
+    lastActiveHistoricIdRef.current = activeHistoricDistrictId
 
     // Skip map camera refit if manual pan/zoom triggered the state change
-    if (!viewModeChanged && !nhChanged) {
+    if (!viewModeChanged && !nhChanged && !councilChanged && !historicChanged) {
       return
     }
 
     isUpdatingFromPropsRef.current = true
 
-    // Center on active neighborhood centroid
-    const activeNh = neighborhoods.find(n => n.id === activeNeighborhoodId)
+    // Center on active boundary (neighborhood, council, historic)
+    let activeBoundaryGeoJson: any = null
+    let targetZoom = 14
+
+    if (viewMode === 'council') {
+      const cd = councilDistricts.find(d => d.id === activeCouncilDistrictId)
+      if (cd) activeBoundaryGeoJson = cd.boundary
+      targetZoom = 12.5
+    } else if (viewMode === 'historic') {
+      const hd = historicDistricts.find(d => d.id === activeHistoricDistrictId)
+      if (hd) activeBoundaryGeoJson = hd.boundary
+      targetZoom = 14.5
+    } else if (viewMode === 'neighborhood') {
+      const activeNh = neighborhoods.find(n => n.id === activeNeighborhoodId)
+      if (activeNh) activeBoundaryGeoJson = activeNh.boundary
+      targetZoom = 14
+    } else if (viewMode === 'district') {
+      const activeNh = neighborhoods.find(n => n.id === activeNeighborhoodId)
+      if (activeNh) activeBoundaryGeoJson = activeNh.boundary
+      targetZoom = 12.5
+    }
+
     let center: [number, number] = [39.742, -75.548] // Fallback
+    let isValidCenter = true
 
     if (viewMode === 'walking' && userLocation) {
-      center = [userLocation.lat, userLocation.lng]
-      map.setView(center, 15, { animate: true })
-    } else if (activeNh && activeNh.boundary && activeNh.boundary.coordinates) {
-      // Find centroid of neighborhood MultiPolygon
+      if (typeof userLocation.lat === 'number' && typeof userLocation.lng === 'number' && !isNaN(userLocation.lat) && !isNaN(userLocation.lng)) {
+        center = [userLocation.lat, userLocation.lng]
+      } else {
+        isValidCenter = false
+      }
+      if (isValidCenter) {
+        map.setView(center, 15, { animate: true })
+      }
+    } else if (activeBoundaryGeoJson && activeBoundaryGeoJson.coordinates) {
+      // Find centroid of the MultiPolygon
       let totalLng = 0, totalLat = 0, count = 0
-      activeNh.boundary.coordinates.forEach((poly: any) => {
+      activeBoundaryGeoJson.coordinates.forEach((poly: any) => {
         poly.forEach((ring: any) => {
           ring.forEach((pt: any) => {
-            totalLng += pt[0]
-            totalLat += pt[1]
-            count++
+            if (pt && typeof pt[0] === 'number' && typeof pt[1] === 'number' && !isNaN(pt[0]) && !isNaN(pt[1])) {
+              totalLng += pt[0]
+              totalLat += pt[1]
+              count++
+            }
           })
         })
       })
       if (count > 0) {
         center = [totalLat / count, totalLng / count]
+      } else {
+        isValidCenter = false
       }
 
-      const zoom = viewMode === 'neighborhood' ? 14 : viewMode === 'district' ? 12.5 : 11
-      map.setView(center, zoom, { animate: true })
+      if (isValidCenter && !isNaN(center[0]) && !isNaN(center[1])) {
+        map.setView(center, targetZoom, { animate: true })
+      }
     } else if (viewMode === 'city') {
       map.setView([39.745, -75.548], 11, { animate: true })
     }
@@ -132,29 +187,47 @@ export default function LeafletMap({
     setTimeout(() => {
       isUpdatingFromPropsRef.current = false
     }, 500)
-  }, [viewMode, activeNeighborhoodId, userLocation, neighborhoods])
+  }, [
+    viewMode,
+    activeNeighborhoodId,
+    activeCouncilDistrictId,
+    activeHistoricDistrictId,
+    userLocation,
+    neighborhoods,
+    councilDistricts,
+    historicDistricts
+  ])
 
   // Render Boundaries & Polygons
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
-    if (geoJsonLayerRef.current) {
-      map.removeLayer(geoJsonLayerRef.current)
+    if (mapRef.current && geoJsonLayerRef.current) {
+      mapRef.current.removeLayer(geoJsonLayerRef.current)
     }
 
-    // Convert neighborhoods list into a GeoJSON FeatureCollection
+    // Determine target collection
+    let targetCollection: any[] = []
+    if (activeMapLayer === 'neighborhood') {
+      targetCollection = neighborhoods
+    } else if (activeMapLayer === 'council') {
+      targetCollection = councilDistricts
+    } else if (activeMapLayer === 'historic') {
+      targetCollection = historicDistricts
+    }
+
     const geoJsonData: any = {
       type: 'FeatureCollection',
-      features: neighborhoods
+      features: targetCollection
         .filter(n => n.boundary)
         .map(n => ({
           type: 'Feature',
           properties: {
             id: n.id,
             name: n.name,
-            districtId: n.districtId,
-            districtName: n.districtName
+            districtId: n.districtId || null,
+            districtName: n.districtName || null
           },
           geometry: n.boundary
         }))
@@ -168,12 +241,25 @@ export default function LeafletMap({
       4: '#d90429'  // Downtown/East/South - Brick Red
     }
 
+    const councilColors = ['#3b82f6', '#00f5d4', '#eab308', '#d90429', '#a855f7', '#ec4899', '#f97316', '#10b981']
+
     const geoLayer = L.geoJSON(geoJsonData, {
       style: (feature: any) => {
         const id = feature.properties.id
-        const isActive = id === activeNeighborhoodId
-        const distId = feature.properties.districtId
-        const color = districtColorMap[distId] || '#64748b'
+        let isActive = false
+        let color = '#64748b'
+
+        if (activeMapLayer === 'neighborhood') {
+          isActive = id === activeNeighborhoodId
+          const distId = feature.properties.districtId
+          color = districtColorMap[distId] || '#64748b'
+        } else if (activeMapLayer === 'council') {
+          isActive = id === activeCouncilDistrictId
+          color = councilColors[(id - 1) % councilColors.length]
+        } else if (activeMapLayer === 'historic') {
+          isActive = id === activeHistoricDistrictId
+          color = '#d97706' // amber/bronze for historic
+        }
 
         return {
           color: isActive ? '#d90429' : color,
@@ -197,17 +283,42 @@ export default function LeafletMap({
           },
           click: (e: any) => {
             L.DomEvent.stopPropagation(e)
-            onSelectNeighborhood(feature.properties.id)
+            if (activeMapLayer === 'neighborhood') {
+              onSelectNeighborhood(feature.properties.id)
+            } else if (activeMapLayer === 'council') {
+              onSelectCouncilDistrict(feature.properties.id)
+            } else if (activeMapLayer === 'historic') {
+              onSelectHistoricDistrict(feature.properties.id)
+            }
           }
         })
 
         // Bind popup tooltips
-        layer.bindTooltip(`
-          <div class="px-2 py-1 bg-slate-900 border border-slate-700 text-white rounded text-xs">
-            <p class="font-bold uppercase tracking-wider text-[10px] text-accent-main">${feature.properties.name}</p>
-            <p class="text-[9px] text-slate-400">District: ${feature.properties.districtName}</p>
-          </div>
-        `, {
+        let tooltipContent = ''
+        if (activeMapLayer === 'neighborhood') {
+          tooltipContent = `
+            <div class="px-2 py-1 bg-slate-900 border border-slate-700 text-white rounded text-xs">
+              <p class="font-bold uppercase tracking-wider text-[10px] text-[#00f5d4]">${feature.properties.name}</p>
+              <p class="text-[9px] text-slate-400">District: ${feature.properties.districtName}</p>
+            </div>
+          `
+        } else if (activeMapLayer === 'council') {
+          tooltipContent = `
+            <div class="px-2 py-1 bg-slate-900 border border-slate-700 text-white rounded text-xs">
+              <p class="font-bold uppercase tracking-wider text-[10px] text-[#00f5d4]">${feature.properties.name}</p>
+              <p class="text-[9px] text-slate-400">Official City Council District</p>
+            </div>
+          `
+        } else if (activeMapLayer === 'historic') {
+          tooltipContent = `
+            <div class="px-2 py-1 bg-slate-900 border border-slate-700 text-white rounded text-xs">
+              <p class="font-bold uppercase tracking-wider text-[10px] text-yellow-500">${feature.properties.name}</p>
+              <p class="text-[9px] text-slate-400">Historic Preservation District</p>
+            </div>
+          `
+        }
+
+        layer.bindTooltip(tooltipContent, {
           permanent: false,
           direction: 'top',
           className: 'custom-tooltip-wrapper',
@@ -219,24 +330,36 @@ export default function LeafletMap({
     geoJsonLayerRef.current = geoLayer
 
     return () => {
-      if (geoJsonLayerRef.current) {
-        map.removeLayer(geoJsonLayerRef.current)
+      if (mapRef.current && geoJsonLayerRef.current) {
+        mapRef.current.removeLayer(geoJsonLayerRef.current)
       }
     }
-  }, [neighborhoods, activeNeighborhoodId, viewMode, onSelectNeighborhood])
+  }, [
+    neighborhoods,
+    councilDistricts,
+    historicDistricts,
+    activeNeighborhoodId,
+    activeCouncilDistrictId,
+    activeHistoricDistrictId,
+    viewMode,
+    activeMapLayer,
+    onSelectNeighborhood,
+    onSelectCouncilDistrict,
+    onSelectHistoricDistrict
+  ])
 
   // Render Walking Radius Pulse Ring
   useEffect(() => {
     const map = mapRef.current
     if (!map) return
 
-    if (walkingCircleRef.current) {
-      map.removeLayer(walkingCircleRef.current)
+    if (mapRef.current && walkingCircleRef.current) {
+      mapRef.current.removeLayer(walkingCircleRef.current)
       walkingCircleRef.current = null
     }
 
     // Only render soft pulsating blue radial ring (0.5-mile / 800m) in walking mode
-    if (viewMode === 'walking' && userLocation) {
+    if (viewMode === 'walking' && userLocation && typeof userLocation.lat === 'number' && typeof userLocation.lng === 'number' && !isNaN(userLocation.lat) && !isNaN(userLocation.lng)) {
       const circle = L.circle([userLocation.lat, userLocation.lng], {
         radius: 800, // 0.5 miles is approx 800 meters
         color: '#00f5d4', // Neon Cyan color matching design theme
@@ -250,8 +373,8 @@ export default function LeafletMap({
     }
 
     return () => {
-      if (walkingCircleRef.current) {
-        map.removeLayer(walkingCircleRef.current)
+      if (mapRef.current && walkingCircleRef.current) {
+        mapRef.current.removeLayer(walkingCircleRef.current)
       }
     }
   }, [viewMode, userLocation])
@@ -261,12 +384,12 @@ export default function LeafletMap({
     const map = mapRef.current
     if (!map) return
 
-    if (userMarkerRef.current) {
-      map.removeLayer(userMarkerRef.current)
+    if (mapRef.current && userMarkerRef.current) {
+      mapRef.current.removeLayer(userMarkerRef.current)
       userMarkerRef.current = null
     }
 
-    if (userLocation) {
+    if (userLocation && typeof userLocation.lat === 'number' && typeof userLocation.lng === 'number' && !isNaN(userLocation.lat) && !isNaN(userLocation.lng)) {
       // Glow pulse HTML pin marker
       const customIcon = L.divIcon({
         className: 'user-marker-icon',
@@ -289,8 +412,8 @@ export default function LeafletMap({
     }
 
     return () => {
-      if (userMarkerRef.current) {
-        map.removeLayer(userMarkerRef.current)
+      if (mapRef.current && userMarkerRef.current) {
+        mapRef.current.removeLayer(userMarkerRef.current)
       }
     }
   }, [userLocation])
@@ -300,17 +423,18 @@ export default function LeafletMap({
     const map = mapRef.current
     if (!map) return
 
-    if (businessGroupRef.current) {
-      map.removeLayer(businessGroupRef.current)
+    if (mapRef.current && businessGroupRef.current) {
+      mapRef.current.removeLayer(businessGroupRef.current)
     }
 
-    const group = L.layerGroup()
+    const group = L.layerGroup();
 
-    businesses.forEach((biz) => {
-      if (!biz.latitude || !biz.longitude) return
+    (businesses || []).forEach((biz) => {
+      if (!biz || !biz.latitude || !biz.longitude) return
       // longitude is stored in latitude and latitude is stored in longitude in mock seed data
       const lat = biz.longitude
       const lng = biz.latitude
+      if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) return
 
       const bizIcon = L.divIcon({
         className: 'biz-marker-icon',
@@ -342,11 +466,85 @@ export default function LeafletMap({
     businessGroupRef.current = group
 
     return () => {
-      if (businessGroupRef.current) {
-        map.removeLayer(businessGroupRef.current)
+      if (mapRef.current && businessGroupRef.current) {
+        mapRef.current.removeLayer(businessGroupRef.current)
       }
     }
   }, [businesses])
+
+  // Render active Beacons
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    if (mapRef.current && beaconGroupRef.current) {
+      mapRef.current.removeLayer(beaconGroupRef.current)
+    }
+
+    const group = L.layerGroup();
+
+    (posts || []).filter(p => p && p.isBeacon).forEach((beacon) => {
+      const nh = (neighborhoods || []).find(n => n && n.id === beacon.neighborhoodId)
+      if (!nh || !nh.boundary || !nh.boundary.coordinates) return
+      
+      // Calculate centroid
+      let totalLng = 0, totalLat = 0, count = 0
+      nh.boundary.coordinates.forEach((poly: any) => {
+        if (!poly) return
+        poly.forEach((ring: any) => {
+          if (!ring) return
+          ring.forEach((pt: any) => {
+            if (pt && typeof pt[0] === 'number' && typeof pt[1] === 'number' && !isNaN(pt[0]) && !isNaN(pt[1])) {
+              totalLng += pt[0]
+              totalLat += pt[1]
+              count++
+            }
+          })
+        })
+      })
+      if (count === 0) return
+      const lat = totalLat / count
+      const lng = totalLng / count
+      if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) return
+
+      const beaconIcon = L.divIcon({
+        className: 'beacon-marker-icon',
+        html: `
+          <div class="relative w-8 h-8 flex items-center justify-center">
+            <div class="absolute w-8 h-8 bg-[#d90429] border-2 border-[#d90429] rounded-full animate-ping opacity-75"></div>
+            <div class="relative w-6 h-6 bg-[#1c2541] border-2 border-[#d90429] text-[12px] flex items-center justify-center rounded-full shadow-lg cursor-pointer">
+              ⚡
+             </div>
+          </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      })
+
+      const marker = L.marker([lat, lng], { icon: beaconIcon })
+      
+      marker.bindTooltip(`
+        <div class="px-2.5 py-1.5 bg-[#1c2541] border border-[#d90429]/50 text-white rounded text-[10px] shadow-xl">
+          <p class="font-extrabold text-[#d90429] flex items-center gap-1">⚡ BEACON: ${beacon.title}</p>
+          <p class="text-[8px] text-slate-400 mt-0.5">${beacon.content.slice(0, 50)}...</p>
+        </div>
+      `, {
+        direction: 'top',
+        opacity: 0.98
+      })
+
+      marker.addTo(group)
+    })
+
+    group.addTo(map)
+    beaconGroupRef.current = group
+
+    return () => {
+      if (mapRef.current && beaconGroupRef.current) {
+        mapRef.current.removeLayer(beaconGroupRef.current)
+      }
+    }
+  }, [posts, neighborhoods])
 
   return (
     <div className="relative w-full h-full">

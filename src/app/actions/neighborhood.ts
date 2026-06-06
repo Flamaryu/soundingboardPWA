@@ -85,6 +85,54 @@ export async function getNeighborhoods() {
   }
 }
 
+// Get council districts
+export async function getCouncilDistricts() {
+  if (isMockDb()) {
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.councilDistricts : []
+  }
+  try {
+    const rows = await db.execute(sql`
+      SELECT id, name, ST_AsGeoJSON(boundary) as boundary
+      FROM council_districts
+    `)
+    return rows.rows.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      boundary: JSON.parse(row.boundary)
+    }))
+  } catch (err) {
+    console.error('Failed to fetch council districts:', err)
+    markDbAsFailed()
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.councilDistricts : []
+  }
+}
+
+// Get historic districts
+export async function getHistoricDistricts() {
+  if (isMockDb()) {
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.historicDistricts : []
+  }
+  try {
+    const rows = await db.execute(sql`
+      SELECT id, name, ST_AsGeoJSON(boundary) as boundary
+      FROM historic_districts
+    `)
+    return rows.rows.map((row: any) => ({
+      id: row.id,
+      name: row.name,
+      boundary: JSON.parse(row.boundary)
+    }))
+  } catch (err) {
+    console.error('Failed to fetch historic districts:', err)
+    markDbAsFailed()
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.historicDistricts : []
+  }
+}
+
 // Get planning districts
 export async function getPlanningDistricts() {
   if (isMockDb()) {
@@ -230,7 +278,7 @@ function findClosestNeighborhood(
 
   return {
     id: bestNh.id,
-    name: bestNh.name,
+    name: `Nearby ${bestNh.name}`,
     districtId: bestNh.districtId,
     districtName: district ? district.name : 'Unknown'
   }

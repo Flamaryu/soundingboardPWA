@@ -131,7 +131,13 @@ export async function fetchWalkingRadiusPosts(
         userName: schema.users.name,
         userRole: schema.users.role,
         neighborhoodName: schema.neighborhoods.name,
-        userReaction: schema.postReactions.type
+        userReaction: schema.postReactions.type,
+        councilDistrictId: schema.posts.councilDistrictId,
+        historicDistrictId: schema.posts.historicDistrictId,
+        isBeacon: schema.posts.isBeacon,
+        beaconExpiresAt: schema.posts.beaconExpiresAt,
+        isPinned: schema.posts.isPinned,
+        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
       })
       .from(schema.posts)
       .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
@@ -215,7 +221,13 @@ export async function fetchBoundaryPosts(
         userName: schema.users.name,
         userRole: schema.users.role,
         neighborhoodName: schema.neighborhoods.name,
-        userReaction: schema.postReactions.type
+        userReaction: schema.postReactions.type,
+        councilDistrictId: schema.posts.councilDistrictId,
+        historicDistrictId: schema.posts.historicDistrictId,
+        isBeacon: schema.posts.isBeacon,
+        beaconExpiresAt: schema.posts.beaconExpiresAt,
+        isPinned: schema.posts.isPinned,
+        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
       })
       .from(schema.posts)
       .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
@@ -234,5 +246,122 @@ export async function fetchBoundaryPosts(
     console.error('PostgreSQL boundary query failed, fallback to mock:', err)
     markDbAsFailed()
     return fetchBoundaryPosts(polygonGeoJson, activeUserId)
+  }
+}
+
+// 3. Fetch posts inside council district
+export async function fetchCouncilDistrictPosts(
+  councilDistrictId: number,
+  activeUserId = 1
+) {
+  console.log(`📡 Fetching posts in Council District: ${councilDistrictId}`)
+
+  if (isMockDb()) {
+    const mockDb = readMockDb()
+    if (!mockDb) return []
+
+    // Filter posts by councilDistrictId directly
+    const matchedPosts = mockDb.posts.filter((post: any) => post.councilDistrictId === councilDistrictId)
+    return matchedPosts.map((p: any) => formatMockPost(p, mockDb, activeUserId))
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  }
+
+  try {
+    const rows = await db
+      .select({
+        id: schema.posts.id,
+        title: schema.posts.title,
+        content: schema.posts.content,
+        type: schema.posts.type,
+        mediaUrl: schema.posts.mediaUrl,
+        userType: schema.posts.userType,
+        neighborhoodId: schema.posts.neighborhoodId,
+        createdAt: schema.posts.createdAt,
+        isProposal: schema.posts.isProposal,
+        likes: schema.posts.likes,
+        seconds: schema.posts.seconds,
+        dislikes: schema.posts.dislikes,
+        objections: schema.posts.objections,
+        userName: schema.users.name,
+        userRole: schema.users.role,
+        neighborhoodName: schema.neighborhoods.name,
+        userReaction: schema.postReactions.type,
+        councilDistrictId: schema.posts.councilDistrictId,
+        historicDistrictId: schema.posts.historicDistrictId,
+        isBeacon: schema.posts.isBeacon,
+        beaconExpiresAt: schema.posts.beaconExpiresAt,
+        isPinned: schema.posts.isPinned,
+        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
+      })
+      .from(schema.posts)
+      .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
+      .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
+      .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
+      .where(eq(schema.posts.councilDistrictId, councilDistrictId))
+      .orderBy(sql`created_at DESC`)
+
+    return rows
+  } catch (err) {
+    console.error('PostgreSQL council district query failed, fallback to mock:', err)
+    markDbAsFailed()
+    return fetchCouncilDistrictPosts(councilDistrictId, activeUserId)
+  }
+}
+
+// 4. Fetch posts inside historic district
+export async function fetchHistoricDistrictPosts(
+  historicDistrictId: number,
+  activeUserId = 1
+) {
+  console.log(`📡 Fetching posts in Historic District: ${historicDistrictId}`)
+
+  if (isMockDb()) {
+    const mockDb = readMockDb()
+    if (!mockDb) return []
+
+    const matchedPosts = mockDb.posts.filter((post: any) => post.historicDistrictId === historicDistrictId)
+    return matchedPosts.map((p: any) => formatMockPost(p, mockDb, activeUserId))
+      .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+  }
+
+  try {
+    const rows = await db
+      .select({
+        id: schema.posts.id,
+        title: schema.posts.title,
+        content: schema.posts.content,
+        type: schema.posts.type,
+        mediaUrl: schema.posts.mediaUrl,
+        userType: schema.posts.userType,
+        neighborhoodId: schema.posts.neighborhoodId,
+        createdAt: schema.posts.createdAt,
+        isProposal: schema.posts.isProposal,
+        likes: schema.posts.likes,
+        seconds: schema.posts.seconds,
+        dislikes: schema.posts.dislikes,
+        objections: schema.posts.objections,
+        userName: schema.users.name,
+        userRole: schema.users.role,
+        neighborhoodName: schema.neighborhoods.name,
+        userReaction: schema.postReactions.type,
+        councilDistrictId: schema.posts.councilDistrictId,
+        historicDistrictId: schema.posts.historicDistrictId,
+        isBeacon: schema.posts.isBeacon,
+        beaconExpiresAt: schema.posts.beaconExpiresAt,
+        isPinned: schema.posts.isPinned,
+        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
+      })
+      .from(schema.posts)
+      .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
+      .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
+      .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
+      .where(eq(schema.posts.historicDistrictId, historicDistrictId))
+      .orderBy(sql`created_at DESC`)
+
+    return rows
+  } catch (err) {
+    console.error('PostgreSQL historic district query failed, fallback to mock:', err)
+    markDbAsFailed()
+    return fetchHistoricDistrictPosts(historicDistrictId, activeUserId)
   }
 }
