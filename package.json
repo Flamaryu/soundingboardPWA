@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "drizzle-orm": "^0.45.2",
     "lucide-react": "^1.17.0",
     "mapbox-gl": "^3.24.0",
