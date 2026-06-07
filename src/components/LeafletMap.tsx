@@ -16,6 +16,9 @@ interface LeafletMapProps {
   viewMode: 'walking' | 'neighborhood' | 'district' | 'city' | 'council' | 'historic'
   activeMapLayer: 'neighborhood' | 'council' | 'historic'
   userLocation: { lng: number; lat: number } | null
+  center: { lng: number; lat: number }
+  zoom: number
+  cameraTrigger?: number
   onSelectNeighborhood: (id: number) => void
   onSelectCouncilDistrict: (id: number) => void
   onSelectHistoricDistrict: (id: number) => void
@@ -34,6 +37,9 @@ export default function LeafletMap({
   viewMode,
   activeMapLayer,
   userLocation,
+  center,
+  zoom,
+  cameraTrigger,
   onSelectNeighborhood,
   onSelectCouncilDistrict,
   onSelectHistoricDistrict,
@@ -47,14 +53,13 @@ export default function LeafletMap({
   const beaconGroupRef = useRef<L.LayerGroup | null>(null)
   const userMarkerRef = useRef<L.Marker | null>(null)
   
-  // Track last processed props to prevent zoom resetting on manual pans/zooms
-  const lastViewModeRef = useRef(viewMode)
-  const lastActiveNhIdRef = useRef(activeNeighborhoodId)
-  const lastActiveCouncilIdRef = useRef(activeCouncilDistrictId)
-  const lastActiveHistoricIdRef = useRef(activeHistoricDistrictId)
-  
   // Track last internal update to prevent feedback loops
   const isUpdatingFromPropsRef = useRef(false)
+  const onCameraChangeRef = useRef(onCameraChange)
+
+  useEffect(() => {
+    onCameraChangeRef.current = onCameraChange
+  }, [onCameraChange])
 
   // Initialize Map
   useEffect(() => {
@@ -82,121 +87,60 @@ export default function LeafletMap({
     L.control.zoom({ position: 'bottomright' }).addTo(map)
 
     // Setup debounced move/zoom listener (300ms)
-    let debounceTimer: NodeJS.Timeout
+    let debounceTimer: NodeJS.Timeout | null = null;
     map.on('moveend', () => {
-      if (isUpdatingFromPropsRef.current) return
+      if (isUpdatingFromPropsRef.current) return;
       
-      clearTimeout(debounceTimer)
+      if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        const center = map.getCenter()
-        const zoom = map.getZoom()
-        onCameraChange({ lng: center.lng, lat: center.lat }, zoom)
-      }, 300)
-    })
+        if (!mapRef.current) return;
+        try {
+          const container = map.getContainer();
+          if (!container) return;
+          const center = map.getCenter();
+          const zoom = map.getZoom();
+          if (center && typeof zoom === 'number') {
+            onCameraChangeRef.current({ lng: center.lng, lat: center.lat }, zoom);
+          }
+        } catch (err) {
+          // ignore map access errors if unmounted/unmounting
+        }
+      }, 300);
+    });
 
     return () => {
-      map.remove()
-      mapRef.current = null
-    }
-  }, [onCameraChange])
+      if (debounceTimer) clearTimeout(debounceTimer);
+      map.off('moveend');
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [])
 
-  // Sync camera pan/zoom when viewMode or active IDs change from parent
+  // Sync camera pan/zoom when cameraTrigger changes from parent
   useEffect(() => {
     const map = mapRef.current
-    if (!map) return
+    if (!map || !center || typeof zoom !== 'number' || !cameraTrigger) return
 
-    const viewModeChanged = lastViewModeRef.current !== viewMode
-    const nhChanged = lastActiveNhIdRef.current !== activeNeighborhoodId
-    const councilChanged = lastActiveCouncilIdRef.current !== activeCouncilDistrictId
-    const historicChanged = lastActiveHistoricIdRef.current !== activeHistoricDistrictId
+    const currentZoom = map.getZoom()
+    const currentCenter = map.getCenter()
 
-    // Update refs for last processed values
-    lastViewModeRef.current = viewMode
-    lastActiveNhIdRef.current = activeNeighborhoodId
-    lastActiveCouncilIdRef.current = activeCouncilDistrictId
-    lastActiveHistoricIdRef.current = activeHistoricDistrictId
+    const centerDiff = Math.abs(currentCenter.lat - center.lat) + Math.abs(currentCenter.lng - center.lng)
+    const zoomDiff = Math.abs(currentZoom - zoom)
 
-    // Skip map camera refit if manual pan/zoom triggered the state change
-    if (!viewModeChanged && !nhChanged && !councilChanged && !historicChanged) {
+    // Skip update if the map camera is already at the target position
+    if (centerDiff < 0.0001 && zoomDiff < 0.01) {
       return
     }
 
     isUpdatingFromPropsRef.current = true
-
-    // Center on active boundary (neighborhood, council, historic)
-    let activeBoundaryGeoJson: any = null
-    let targetZoom = 14
-
-    if (viewMode === 'council') {
-      const cd = councilDistricts.find(d => d.id === activeCouncilDistrictId)
-      if (cd) activeBoundaryGeoJson = cd.boundary
-      targetZoom = 12.5
-    } else if (viewMode === 'historic') {
-      const hd = historicDistricts.find(d => d.id === activeHistoricDistrictId)
-      if (hd) activeBoundaryGeoJson = hd.boundary
-      targetZoom = 14.5
-    } else if (viewMode === 'neighborhood') {
-      const activeNh = neighborhoods.find(n => n.id === activeNeighborhoodId)
-      if (activeNh) activeBoundaryGeoJson = activeNh.boundary
-      targetZoom = 14
-    } else if (viewMode === 'district') {
-      const activeNh = neighborhoods.find(n => n.id === activeNeighborhoodId)
-      if (activeNh) activeBoundaryGeoJson = activeNh.boundary
-      targetZoom = 12.5
-    }
-
-    let center: [number, number] = [39.742, -75.548] // Fallback
-    let isValidCenter = true
-
-    if (viewMode === 'walking' && userLocation) {
-      if (typeof userLocation.lat === 'number' && typeof userLocation.lng === 'number' && !isNaN(userLocation.lat) && !isNaN(userLocation.lng)) {
-        center = [userLocation.lat, userLocation.lng]
-      } else {
-        isValidCenter = false
-      }
-      if (isValidCenter) {
-        map.setView(center, 15, { animate: true })
-      }
-    } else if (activeBoundaryGeoJson && activeBoundaryGeoJson.coordinates) {
-      // Find centroid of the MultiPolygon
-      let totalLng = 0, totalLat = 0, count = 0
-      activeBoundaryGeoJson.coordinates.forEach((poly: any) => {
-        poly.forEach((ring: any) => {
-          ring.forEach((pt: any) => {
-            if (pt && typeof pt[0] === 'number' && typeof pt[1] === 'number' && !isNaN(pt[0]) && !isNaN(pt[1])) {
-              totalLng += pt[0]
-              totalLat += pt[1]
-              count++
-            }
-          })
-        })
-      })
-      if (count > 0) {
-        center = [totalLat / count, totalLng / count]
-      } else {
-        isValidCenter = false
-      }
-
-      if (isValidCenter && !isNaN(center[0]) && !isNaN(center[1])) {
-        map.setView(center, targetZoom, { animate: true })
-      }
-    } else if (viewMode === 'city') {
-      map.setView([39.745, -75.548], 11, { animate: true })
-    }
-
-    setTimeout(() => {
+    map.setView([center.lat, center.lng], zoom, { animate: true })
+    
+    const timer = setTimeout(() => {
       isUpdatingFromPropsRef.current = false
     }, 500)
-  }, [
-    viewMode,
-    activeNeighborhoodId,
-    activeCouncilDistrictId,
-    activeHistoricDistrictId,
-    userLocation,
-    neighborhoods,
-    councilDistricts,
-    historicDistricts
-  ])
+
+    return () => clearTimeout(timer)
+  }, [cameraTrigger])
 
   // Render Boundaries & Polygons
   useEffect(() => {
@@ -418,57 +362,11 @@ export default function LeafletMap({
     }
   }, [userLocation])
 
-  // Render Business storefront pins
+  // Render Business storefront pins (Removed per user request - only paid beacons will be rendered)
   useEffect(() => {
-    const map = mapRef.current
-    if (!map) return
-
     if (mapRef.current && businessGroupRef.current) {
       mapRef.current.removeLayer(businessGroupRef.current)
-    }
-
-    const group = L.layerGroup();
-
-    (businesses || []).forEach((biz) => {
-      if (!biz || !biz.latitude || !biz.longitude) return
-      // longitude is stored in latitude and latitude is stored in longitude in mock seed data
-      const lat = biz.longitude
-      const lng = biz.latitude
-      if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) return
-
-      const bizIcon = L.divIcon({
-        className: 'biz-marker-icon',
-        html: `
-          <div class="w-7 h-7 bg-slate-900 border border-[#d90429] hover:border-[#00f5d4] text-[10px] flex items-center justify-center rounded-full shadow-md cursor-pointer transition-all duration-300 hover:scale-110 active:scale-95">
-            🏢
-          </div>
-        `,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14]
-      })
-
-      const marker = L.marker([lat, lng], { icon: bizIcon })
-      
-      marker.bindTooltip(`
-        <div class="px-2 py-1 bg-slate-900 border border-slate-700 text-white rounded text-[10px]">
-          <p class="font-bold text-[#d90429]">${biz.name}</p>
-          <p class="text-[8px] text-slate-400">Local Registered Business</p>
-        </div>
-      `, {
-        direction: 'top',
-        opacity: 0.95
-      })
-
-      marker.addTo(group)
-    })
-
-    group.addTo(map)
-    businessGroupRef.current = group
-
-    return () => {
-      if (mapRef.current && businessGroupRef.current) {
-        mapRef.current.removeLayer(businessGroupRef.current)
-      }
+      businessGroupRef.current = null
     }
   }, [businesses])
 
@@ -483,7 +381,14 @@ export default function LeafletMap({
 
     const group = L.layerGroup();
 
-    (posts || []).filter(p => p && p.isBeacon).forEach((beacon) => {
+    (posts || []).filter(p => {
+      if (!p || !p.isBeacon) return false
+      if (p.beaconExpiresAt) {
+        const expires = new Date(p.beaconExpiresAt).getTime()
+        if (expires < Date.now()) return false
+      }
+      return true
+    }).forEach((beacon) => {
       const nh = (neighborhoods || []).find(n => n && n.id === beacon.neighborhoodId)
       if (!nh || !nh.boundary || !nh.boundary.coordinates) return
       
@@ -527,10 +432,21 @@ export default function LeafletMap({
         <div class="px-2.5 py-1.5 bg-[#1c2541] border border-[#d90429]/50 text-white rounded text-[10px] shadow-xl">
           <p class="font-extrabold text-[#d90429] flex items-center gap-1">⚡ BEACON: ${beacon.title}</p>
           <p class="text-[8px] text-slate-400 mt-0.5">${beacon.content.slice(0, 50)}...</p>
+          <p class="text-[7px] text-[#00f5d4] mt-1 animate-pulse">📍 Click beacon for directions</p>
         </div>
       `, {
         direction: 'top',
         opacity: 0.98
+      })
+
+      marker.on('click', () => {
+        const isApple = typeof navigator !== 'undefined' && /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
+        const encodedLabel = encodeURIComponent(beacon.title);
+        let url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+        if (isApple) {
+          url = `maps://maps.apple.com/?q=${encodedLabel}&ll=${lat},${lng}`;
+        }
+        window.open(url, '_blank');
       })
 
       marker.addTo(group)

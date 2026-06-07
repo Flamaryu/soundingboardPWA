@@ -98,6 +98,7 @@ export const posts = pgTable('posts', {
   isPinned: boolean('is_pinned').default(false).notNull(),
   pinnedDistrictId: integer('pinned_district_id').references(() => planningDistricts.id),
   pinnedCouncilDistrictId: integer('pinned_council_district_id').references(() => councilDistricts.id),
+  anonymousAuthorName: text('anonymous_author_name'),
 })
 
 // Drizzle relations
@@ -147,7 +148,7 @@ export const postReactions = pgTable('post_reactions', {
   id: serial('id').primaryKey(),
   postId: integer('post_id').references(() => posts.id).notNull(),
   userId: integer('user_id').references(() => users.id).notNull(),
-  type: text('type', { enum: ['like', 'second', 'dislike', 'object'] }).notNull(),
+  type: text('type', { enum: ['like', 'second', 'dislike', 'object', 'love_local', 'second_this', 'not_for_me', 'bad_for_community'] }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => [
   unique('post_user_unique').on(table.postId, table.userId)
@@ -156,4 +157,19 @@ export const postReactions = pgTable('post_reactions', {
 export const postReactionsRelations = relations(postReactions, ({ one }) => ({
   post: one(posts, { fields: [postReactions.postId], references: [posts.id] }),
   user: one(users, { fields: [postReactions.userId], references: [users.id] }),
+}))
+
+export const civicVotes = pgTable('civic_votes', {
+  id: serial('id').primaryKey(),
+  postId: integer('post_id').references(() => posts.id).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  vote: text('vote', { enum: ['agree', 'object'] }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  unique('civic_vote_user_unique').on(table.postId, table.userId)
+])
+
+export const civicVotesRelations = relations(civicVotes, ({ one }) => ({
+  post: one(posts, { fields: [civicVotes.postId], references: [posts.id] }),
+  user: one(users, { fields: [civicVotes.userId], references: [users.id] }),
 }))

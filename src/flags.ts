@@ -55,3 +55,31 @@ export const enableMiniblogs = flag<boolean>({
     return process.env.ENABLE_MINIBLOGS !== 'false'
   }
 })
+
+export const customLocalReactions = flag<boolean>({
+  key: 'custom-local-reactions',
+  decide() {
+    return process.env.CUSTOM_LOCAL_REACTIONS !== 'false'
+  }
+})
+
+export const civicProposalVoting = flag<boolean>({
+  key: 'civic-proposal-voting',
+  decide() {
+    return process.env.CIVIC_PROPOSAL_VOTING !== 'false'
+  }
+})
+
+export const anonymousCitizenPosts = flag<boolean>({
+  key: 'anonymous-citizen-posts',
+  decide() {
+    return process.env.ANONYMOUS_CITIZEN_POSTS !== 'false'
+  }
+})
+
+export const echoTimeDecay = flag<boolean>({
+  key: 'echo-time-decay',
+  decide() {
+    return process.env.ECHO_TIME_DECAY !== 'false'
+  }
+})

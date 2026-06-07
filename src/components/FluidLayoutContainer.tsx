@@ -19,9 +19,12 @@ import {
   MessageSquare,
   BookOpen,
   Video,
-  ImageIcon
+  ImageIcon,
+  ChevronUp,
+  ChevronDown,
+  X
 } from 'lucide-react'
-import { reactToPost, createPost } from '@/app/actions/posts'
+import { reactToPost, createPost, castCivicVote } from '@/app/actions/posts'
 import { resolveAddress } from '@/app/actions/neighborhood'
 
 // Dynamically import Leaflet map to avoid server-side rendering issues
@@ -52,10 +55,72 @@ interface FluidLayoutContainerProps {
     enableVideoShorts: boolean
     enableStories: boolean
     enableMiniblogs: boolean
+    customLocalReactions: boolean
+    civicProposalVoting: boolean
+    anonymousCitizenPosts: boolean
+    echoTimeDecay: boolean
   }
 }
 
 type DragState = 'collapsed' | 'half' | 'expanded'
+
+const isVideoUrl = (url: string) => {
+  if (!url) return false
+  const cleanUrl = url.toLowerCase().split('?')[0]
+  return (
+    cleanUrl.endsWith('.mp4') ||
+    cleanUrl.endsWith('.webm') ||
+    cleanUrl.endsWith('.mov') ||
+    cleanUrl.endsWith('.ogg') ||
+    url.includes('video-') ||
+    url.includes('mp4')
+  )
+}
+
+const getBoundaryCentroid = (boundary: any): { lat: number; lng: number } | null => {
+  if (!boundary || !boundary.coordinates) return null
+  let totalLng = 0, totalLat = 0, count = 0
+  boundary.coordinates.forEach((poly: any) => {
+    if (!poly) return
+    poly.forEach((ring: any) => {
+      if (!ring) return
+      ring.forEach((pt: any) => {
+        if (pt && typeof pt[0] === 'number' && typeof pt[1] === 'number' && !isNaN(pt[0]) && !isNaN(pt[1])) {
+          totalLng += pt[0]
+          totalLat += pt[1]
+          count++
+        }
+      })
+    })
+  })
+  if (count > 0) {
+    return { lat: totalLat / count, lng: totalLng / count }
+  }
+  return null
+}
+
+function TruncatedContent({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const limit = 280
+
+  if (content.length <= limit) {
+    return <p className="text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap">{content}</p>
+  }
+
+  const displayedText = expanded ? content : content.slice(0, limit) + '...'
+
+  return (
+    <div>
+      <p className="text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap">{displayedText}</p>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="text-[10px] text-[#00f5d4] font-bold hover:underline mt-1 focus:outline-none"
+      >
+        {expanded ? 'Show Less' : 'Read More'}
+      </button>
+    </div>
+  )
+}
 
 export default function FluidLayoutContainer({
   neighborhoods,
@@ -68,6 +133,44 @@ export default function FluidLayoutContainer({
   flags
 }: FluidLayoutContainerProps) {
   const router = useRouter()
+
+  // Directions coordinates helper
+  const getPostCoordinates = (post: any) => {
+    // 1. Try finding user coordinates in mockUsers
+    const postAuthor = mockUsers.find(u => u.id === post.userId)
+    if (postAuthor && typeof postAuthor.latitude === 'number' && typeof postAuthor.longitude === 'number') {
+      // If mock DB coordinates swap is present (latitude is negative in DE)
+      if (postAuthor.latitude < 0) {
+        return { lat: postAuthor.longitude, lng: postAuthor.latitude }
+      }
+      return { lat: postAuthor.latitude, lng: postAuthor.longitude }
+    }
+
+    // 2. Fallback to neighborhood centroid
+    const nh = neighborhoods.find(n => n.id === post.neighborhoodId)
+    if (nh && nh.boundary && nh.boundary.coordinates) {
+      let totalLng = 0, totalLat = 0, count = 0
+      nh.boundary.coordinates.forEach((poly: any) => {
+        if (!poly) return
+        poly.forEach((ring: any) => {
+          if (!ring) return
+          ring.forEach((pt: any) => {
+            if (pt && typeof pt[0] === 'number' && typeof pt[1] === 'number' && !isNaN(pt[0]) && !isNaN(pt[1])) {
+              totalLng += pt[0]
+              totalLat += pt[1]
+              count++
+            }
+          })
+        })
+      })
+      if (count > 0) {
+        return { lat: totalLat / count, lng: totalLng / count }
+      }
+    }
+
+    // 3. Absolute fallback to Wilmington center
+    return { lat: 39.742, lng: -75.548 }
+  }
   const [activeUserId, setActiveUserId] = useState(initialUserId)
   const [activeNhId, setActiveNhId] = useState(initialNhId)
   
@@ -81,6 +184,13 @@ export default function FluidLayoutContainer({
   const [viewMode, setViewMode] = useState<'walking' | 'neighborhood' | 'district' | 'city' | 'council' | 'historic'>('neighborhood')
   const [mapCenter, setMapCenter] = useState({ lng: -75.548, lat: 39.742 })
   const [mapZoom, setMapZoom] = useState(13)
+  const [cameraTrigger, setCameraTrigger] = useState(0)
+
+  const triggerCameraMove = (center: { lng: number; lat: number }, zoom: number) => {
+    setMapCenter(center)
+    setMapZoom(zoom)
+    setCameraTrigger(prev => prev + 1)
+  }
   
   // Posts & search states
   const [posts, setPosts] = useState<any[]>([])
@@ -104,10 +214,9 @@ export default function FluidLayoutContainer({
       setGeoSuccessMessage(`Located: ${res.neighborhood.name}!`)
       
       // Center map on geocoded location coordinates
-      setMapCenter({ lng: res.lng, lat: res.lat })
       setActiveNhId(res.neighborhood.id)
       setViewMode('neighborhood')
-      setMapZoom(14)
+      triggerCameraMove({ lng: res.lng, lat: res.lat }, 14)
     } catch (err) {
       setGeoError('Could not geocode address. Try Trolley Square or Highlands.')
     }
@@ -120,6 +229,7 @@ export default function FluidLayoutContainer({
   const dragStartYRef = useRef(0)
   const sheetOffsetRef = useRef(0)
   const sheetHeightRef = useRef(0)
+  const translateYRef = useRef(0)
 
   // Form State
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -128,6 +238,7 @@ export default function FluidLayoutContainer({
   const [content, setContent] = useState('')
   const [mediaUrl, setMediaUrl] = useState('')
   const [isProposal, setIsProposal] = useState(false)
+  const [isAnonymous, setIsAnonymous] = useState(false)
   const [blastToCouncil, setBlastToCouncil] = useState(false)
   const [targetCouncilId, setTargetCouncilId] = useState(1)
   const [isBeacon, setIsBeacon] = useState(false)
@@ -150,14 +261,20 @@ export default function FluidLayoutContainer({
             lat: position.coords.latitude
           }
           setUserLocation(coords)
-          setMapCenter(coords)
           // Default to walking mode if GPS location is successfully fetched
           setViewMode('walking')
-          setMapZoom(15)
+          triggerCameraMove(coords, 15)
         },
         (error) => {
           console.warn('Geolocation access denied. Using Wilmington Center City fallback.')
           setUserLocation({ lng: -75.548, lat: 39.742 })
+          const nh = neighborhoods.find(n => n.id === initialNhId)
+          if (nh) {
+            const centroid = getBoundaryCentroid(nh.boundary)
+            if (centroid) {
+              triggerCameraMove(centroid, 14)
+            }
+          }
         }
       )
     }
@@ -177,7 +294,8 @@ export default function FluidLayoutContainer({
         userId: activeUserId,
         polygonGeoJson: viewMode === 'neighborhood' && activeNh ? activeNh.boundary : null,
         councilDistrictId: activeCouncilDistrictId,
-        historicDistrictId: activeHistoricDistrictId
+        historicDistrictId: activeHistoricDistrictId,
+        echoTimeDecay: flags.echoTimeDecay
       }
 
       const response = await fetch('/api/posts', {
@@ -208,24 +326,24 @@ export default function FluidLayoutContainer({
     setMapZoom(zoom)
 
     // Bi-directional Sync: Auto-update segmented control based on zoom thresholds
-    if (zoom >= 15) {
+    if (zoom >= 14.8) {
       setViewMode('walking')
     } else if (activeMapLayer === 'council') {
-      if (zoom >= 12) {
+      if (zoom >= 12.2) {
         setViewMode('council')
       } else {
         setViewMode('city')
       }
     } else if (activeMapLayer === 'historic') {
-      if (zoom >= 13.5) {
+      if (zoom >= 13.8) {
         setViewMode('historic')
       } else {
         setViewMode('city')
       }
     } else {
-      if (zoom >= 13) {
+      if (zoom >= 13.2) {
         setViewMode('neighborhood')
-      } else if (zoom >= 11) {
+      } else if (zoom >= 11.2) {
         setViewMode('district')
       } else {
         setViewMode('city')
@@ -237,18 +355,49 @@ export default function FluidLayoutContainer({
   const handleSegmentClick = (mode: 'walking' | 'neighborhood' | 'district' | 'city' | 'council' | 'historic') => {
     setViewMode(mode)
     if (mode === 'walking') {
-      setMapZoom(15)
-      if (userLocation) setMapCenter(userLocation)
+      if (userLocation) {
+        triggerCameraMove(userLocation, 15)
+      } else {
+        setMapZoom(15)
+      }
     } else if (mode === 'neighborhood') {
-      setMapZoom(14)
+      const nh = neighborhoods.find(n => n.id === activeNhId)
+      if (nh) {
+        const centroid = getBoundaryCentroid(nh.boundary)
+        if (centroid) triggerCameraMove(centroid, 14)
+        else setMapZoom(14)
+      } else {
+        setMapZoom(14)
+      }
     } else if (mode === 'district') {
-      setMapZoom(12.5)
+      const nh = neighborhoods.find(n => n.id === activeNhId)
+      if (nh) {
+        const centroid = getBoundaryCentroid(nh.boundary)
+        if (centroid) triggerCameraMove(centroid, 12.5)
+        else setMapZoom(12.5)
+      } else {
+        setMapZoom(12.5)
+      }
     } else if (mode === 'council') {
-      setMapZoom(12.5)
+      const cd = councilDistricts.find(d => d.id === activeCouncilDistrictId)
+      if (cd) {
+        const centroid = getBoundaryCentroid(cd.boundary)
+        if (centroid) triggerCameraMove(centroid, 12.5)
+        else setMapZoom(12.5)
+      } else {
+        setMapZoom(12.5)
+      }
     } else if (mode === 'historic') {
-      setMapZoom(14.5)
+      const hd = historicDistricts.find(d => d.id === activeHistoricDistrictId)
+      if (hd) {
+        const centroid = getBoundaryCentroid(hd.boundary)
+        if (centroid) triggerCameraMove(centroid, 14.5)
+        else setMapZoom(14.5)
+      } else {
+        setMapZoom(14.5)
+      }
     } else {
-      setMapZoom(11)
+      triggerCameraMove({ lat: 39.745, lng: -75.548 }, 11)
     }
   }
 
@@ -275,10 +424,11 @@ export default function FluidLayoutContainer({
         isBeacon,
         beaconExpiresAt: isBeacon ? new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() : undefined,
         isPinned,
-        pinnedCouncilDistrictId: isPinned ? pinnedCouncilId : undefined
+        pinnedCouncilDistrictId: isPinned ? pinnedCouncilId : undefined,
+        isAnonymous
       })
 
-      if (res.success) {
+      if (res.success && res.post) {
         setTitle('')
         setContent('')
         setMediaUrl('')
@@ -286,7 +436,38 @@ export default function FluidLayoutContainer({
         setBlastToCouncil(false)
         setIsBeacon(false)
         setIsPinned(false)
+        setIsAnonymous(false)
         setShowCreateForm(false)
+        
+        // Enrich the post locally and append to state for immediate rendering
+        const nh = neighborhoods.find(n => n.id === (res.post.neighborhoodId || activeNhId))
+        const enrichedPost = {
+          ...res.post,
+          userName: res.post.anonymousAuthorName ? res.post.anonymousAuthorName : (currentUser ? currentUser.name : 'Unknown User'),
+          userRole: res.post.anonymousAuthorName ? 'citizen' : (currentUser ? currentUser.role : 'citizen'),
+          neighborhoodName: nh ? nh.name : 'Wilmington',
+          userReaction: null,
+          likes: res.post.likes || 0,
+          seconds: res.post.seconds || 0,
+          dislikes: res.post.dislikes || 0,
+          objections: res.post.objections || 0,
+          isProposal: res.post.isProposal || false,
+          isBeacon: res.post.isBeacon || false,
+          isPinned: res.post.isPinned || false
+        }
+        setPosts(prev => {
+          let updated = prev
+          if (enrichedPost.isBeacon) {
+            updated = prev.map(p => {
+              if (p.userId === enrichedPost.userId && p.neighborhoodId === enrichedPost.neighborhoodId && p.isBeacon) {
+                return { ...p, isBeacon: false, beaconExpiresAt: null }
+              }
+              return p
+            })
+          }
+          return [enrichedPost, ...updated]
+        })
+        
         fetchPosts()
       } else {
         setFormError(res.error || 'Failed to publish post.')
@@ -295,10 +476,112 @@ export default function FluidLayoutContainer({
   }
 
   // React to post
-  const handleReact = async (postId: number, reactionType: 'like' | 'second' | 'dislike' | 'object') => {
+  const handleReact = async (
+    postId: number, 
+    reactionType: 'like' | 'second' | 'dislike' | 'object' | 'love_local' | 'second_this' | 'not_for_me' | 'bad_for_community'
+  ) => {
+    // Optimistically update reactions locally for instant response
+    setPosts(prevPosts => {
+      return prevPosts.map(post => {
+        if (post.id !== postId) return post
+        
+        let likes = post.likes || 0
+        let seconds = post.seconds || 0
+        let dislikes = post.dislikes || 0
+        let objections = post.objections || 0
+        let userReaction = post.userReaction
+        
+        const oldReaction = userReaction
+        
+        const mapReactionToCol = (type: string): 'likes' | 'seconds' | 'dislikes' | 'objections' => {
+          if (type === 'love_local' || type === 'like') return 'likes'
+          if (type === 'second_this' || type === 'second') return 'seconds'
+          if (type === 'not_for_me' || type === 'dislike') return 'dislikes'
+          return 'objections'
+        }
+
+        const oldCol = oldReaction ? mapReactionToCol(oldReaction) : null
+        const newCol = mapReactionToCol(reactionType)
+
+        if (oldReaction === reactionType) {
+          // Untoggle
+          userReaction = null
+          if (newCol === 'likes') likes = Math.max(0, likes - 1)
+          else if (newCol === 'seconds') seconds = Math.max(0, seconds - 1)
+          else if (newCol === 'dislikes') dislikes = Math.max(0, dislikes - 1)
+          else if (newCol === 'objections') objections = Math.max(0, objections - 1)
+        } else {
+          // Decrement old
+          if (oldCol === 'likes') likes = Math.max(0, likes - 1)
+          else if (oldCol === 'seconds') seconds = Math.max(0, seconds - 1)
+          else if (oldCol === 'dislikes') dislikes = Math.max(0, dislikes - 1)
+          else if (oldCol === 'objections') objections = Math.max(0, objections - 1)
+          
+          // Increment new
+          userReaction = reactionType
+          if (newCol === 'likes') likes++
+          else if (newCol === 'seconds') seconds++
+          else if (newCol === 'dislikes') dislikes++
+          else if (newCol === 'objections') objections++
+        }
+        
+        return {
+          ...post,
+          likes,
+          seconds,
+          dislikes,
+          objections,
+          userReaction
+        }
+      })
+    })
+
     const res = await reactToPost(postId, activeUserId, reactionType)
     if (res.success) {
-      // Reload posts
+      fetchPosts()
+    }
+  }
+
+  // Cast civic vote
+  const handleCivicVote = async (postId: number, voteType: 'agree' | 'object') => {
+    // Optimistically update votes locally
+    setPosts(prevPosts => {
+      return prevPosts.map(post => {
+        if (post.id !== postId) return post
+        
+        let seconds = post.seconds || 0
+        let objections = post.objections || 0
+        
+        const oldReaction = post.userReaction
+        let userReaction = post.userReaction
+
+        if (oldReaction === voteType) {
+          // Untoggle
+          userReaction = null
+          if (voteType === 'agree') seconds = Math.max(0, seconds - 1)
+          else objections = Math.max(0, objections - 1)
+        } else {
+          // Decrement old
+          if (oldReaction === 'agree') seconds = Math.max(0, seconds - 1)
+          else if (oldReaction === 'object') objections = Math.max(0, objections - 1)
+          
+          // Increment new
+          userReaction = voteType
+          if (voteType === 'agree') seconds++
+          else objections++
+        }
+
+        return {
+          ...post,
+          seconds,
+          objections,
+          userReaction
+        }
+      })
+    })
+
+    const res = await castCivicVote(postId, activeUserId, voteType)
+    if (res.success) {
       fetchPosts()
     }
   }
@@ -317,6 +600,7 @@ export default function FluidLayoutContainer({
     dragStartYRef.current = y
     // Initialize offset to current snap Y coordinate
     sheetOffsetRef.current = getSheetSnapY(sheetState)
+    translateYRef.current = sheetOffsetRef.current
     setTranslateY(sheetOffsetRef.current)
   }
 
@@ -329,12 +613,13 @@ export default function FluidLayoutContainer({
     if (newY < window.innerHeight * 0.05) newY = window.innerHeight * 0.05
     if (newY > window.innerHeight - 50) newY = window.innerHeight - 50
     
+    translateYRef.current = newY
     setTranslateY(newY)
   }
 
   const handleEndDrag = () => {
     setIsDragging(false)
-    const currentY = translateY || getSheetSnapY(sheetState)
+    const currentY = translateYRef.current || getSheetSnapY(sheetState)
     
     const height = window.innerHeight
     const snapPoints: { state: DragState; y: number }[] = [
@@ -349,8 +634,44 @@ export default function FluidLayoutContainer({
     })
 
     setSheetState(closest.state)
+    translateYRef.current = 0
     setTranslateY(0) // Let CSS transition handle it based on snap state
   }
+
+  // Handle window-level mouse/touch drag events to prevent getting stuck
+  useEffect(() => {
+    if (!isDragging) return
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      handleMoveDrag(e.clientY)
+    }
+
+    const handleWindowTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        handleMoveDrag(e.touches[0].clientY)
+      }
+    }
+
+    const handleWindowMouseUp = () => {
+      handleEndDrag()
+    }
+
+    const handleWindowTouchEnd = () => {
+      handleEndDrag()
+    }
+
+    window.addEventListener('mousemove', handleWindowMouseMove)
+    window.addEventListener('touchmove', handleWindowTouchMove, { passive: true })
+    window.addEventListener('mouseup', handleWindowMouseUp)
+    window.addEventListener('touchend', handleWindowTouchEnd)
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove)
+      window.removeEventListener('touchmove', handleWindowTouchMove)
+      window.removeEventListener('mouseup', handleWindowMouseUp)
+      window.removeEventListener('touchend', handleWindowTouchEnd)
+    }
+  }, [isDragging])
 
   // Filter posts client-side for search queries and enabled post types
   const filteredPosts = posts.filter(p => {
@@ -397,17 +718,44 @@ export default function FluidLayoutContainer({
           viewMode={viewMode}
           activeMapLayer={activeMapLayer}
           userLocation={userLocation}
+          center={mapCenter}
+          zoom={mapZoom}
+          cameraTrigger={cameraTrigger}
           onSelectNeighborhood={(id) => {
             setActiveNhId(id)
             setViewMode('neighborhood')
+            const nh = neighborhoods.find(n => n.id === id)
+            if (nh) {
+              const centroid = getBoundaryCentroid(nh.boundary)
+              if (centroid) triggerCameraMove(centroid, 14)
+              else setMapZoom(14)
+            } else {
+              setMapZoom(14)
+            }
           }}
           onSelectCouncilDistrict={(id) => {
             setActiveCouncilDistrictId(id)
             setViewMode('council')
+            const cd = councilDistricts.find(d => d.id === id)
+            if (cd) {
+              const centroid = getBoundaryCentroid(cd.boundary)
+              if (centroid) triggerCameraMove(centroid, 12.5)
+              else setMapZoom(12.5)
+            } else {
+              setMapZoom(12.5)
+            }
           }}
           onSelectHistoricDistrict={(id) => {
             setActiveHistoricDistrictId(id)
             setViewMode('historic')
+            const hd = historicDistricts.find(d => d.id === id)
+            if (hd) {
+              const centroid = getBoundaryCentroid(hd.boundary)
+              if (centroid) triggerCameraMove(centroid, 14.5)
+              else setMapZoom(14.5)
+            } else {
+              setMapZoom(14.5)
+            }
           }}
           onCameraChange={handleCameraChange}
         />
@@ -480,7 +828,7 @@ export default function FluidLayoutContainer({
 
       {/* 2. Drag-snap Snappable Bottom Sheet */}
       <div
-        className="absolute left-0 right-0 z-30 bg-[#121824]/98 border-t border-slate-700/50 shadow-2xl rounded-t-[36px] backdrop-blur-lg flex flex-col transition-transform"
+        className="absolute left-0 right-0 z-30 bg-[#121824]/98 border-t border-slate-700/50 shadow-2xl rounded-t-[36px] backdrop-blur-lg flex flex-col transition-transform pointer-events-none"
         style={{
           height: '100%',
           transform: !isMounted
@@ -492,27 +840,39 @@ export default function FluidLayoutContainer({
         }}
       >
         {/* DRAG HANDLE BAR */}
-        <div
-          className="w-full flex flex-col items-center py-3.5 cursor-grab active:cursor-grabbing select-none"
-          onMouseDown={(e) => handleStartDrag(e.clientY)}
-          onMouseMove={(e) => handleMoveDrag(e.clientY)}
-          onMouseUp={handleEndDrag}
-          onMouseLeave={handleEndDrag}
-          onTouchStart={(e) => handleStartDrag(e.touches[0].clientY)}
-          onTouchMove={(e) => handleMoveDrag(e.touches[0].clientY)}
-          onTouchEnd={handleEndDrag}
-        >
-          {/* Snap Drag Pill */}
-          <div className="w-12 h-1.5 bg-slate-600 rounded-full" />
-          
-          <div className="text-[10px] font-extrabold uppercase tracking-widest text-[#00f5d4] mt-2.5 flex items-center gap-1.5 pointer-events-none">
-            <span className="w-2 h-2 rounded-full bg-[#00f5d4] animate-pulse"></span>
-            {activeScopeTitle()}
+        <div className="relative w-full flex flex-col items-center py-3.5 select-none pointer-events-auto">
+          <div
+            className="w-full flex flex-col items-center cursor-grab active:cursor-grabbing"
+            onMouseDown={(e) => handleStartDrag(e.clientY)}
+            onTouchStart={(e) => handleStartDrag(e.touches[0].clientY)}
+          >
+            {/* Snap Drag Pill */}
+            <div className="w-12 h-1.5 bg-slate-600 rounded-full" />
+            
+            <div className="text-[10px] font-extrabold uppercase tracking-widest text-[#00f5d4] mt-2.5 flex items-center gap-1.5 pointer-events-none">
+              <span className="w-2 h-2 rounded-full bg-[#00f5d4] animate-pulse"></span>
+              {activeScopeTitle()}
+            </div>
           </div>
+
+          {/* Toggle Close / Expand button */}
+          <button
+            onClick={() => {
+              setSheetState(prev => prev === 'collapsed' ? 'half' : 'collapsed')
+            }}
+            className="absolute right-5 top-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full p-1.5 transition-all text-xs flex items-center justify-center border border-slate-700 shadow-md"
+            aria-label="Toggle drawer"
+          >
+            {sheetState === 'collapsed' ? (
+              <ChevronUp className="w-3.5 h-3.5 text-[#00f5d4]" />
+            ) : (
+              <X className="w-3.5 h-3.5 text-slate-400 hover:text-white" />
+            )}
+          </button>
         </div>
 
         {/* BOTTOM SHEET CORE SCROLLABLE CONTENT */}
-        <div className="flex-1 flex flex-col overflow-hidden px-4 md:px-6 pb-24">
+        <div className="flex-1 flex flex-col overflow-hidden px-4 md:px-6 pb-24 pointer-events-auto">
           
           {/* SEGMENTED CONTROL TAB BAR */}
           <div className="flex bg-[#0b132b] p-1 border border-slate-700/50 rounded-2xl mb-4 gap-1 select-none">
@@ -690,6 +1050,21 @@ export default function FluidLayoutContainer({
                   </div>
                 )}
 
+                {flags.anonymousCitizenPosts && (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      id="fluid-isAnonymous"
+                      checked={isAnonymous}
+                      onChange={(e) => setIsAnonymous(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-[#d90429] focus:ring-[#d90429] border-slate-700 bg-[#0b132b]"
+                    />
+                    <label htmlFor="fluid-isAnonymous" className="text-[10px] font-bold text-white cursor-pointer select-none">
+                      🕵️‍♂️ Post Anonymously as Citizen
+                    </label>
+                  </div>
+                )}
+
                 {currentUser.role !== 'citizen' && (
                   <div className="border-t border-slate-700/50 pt-3.5 flex flex-col gap-3.5 select-none">
                     <h4 className="text-[10px] font-extrabold text-[#00f5d4] uppercase tracking-wider">Premium Marketing & Monetization Options</h4>
@@ -821,7 +1196,13 @@ export default function FluidLayoutContainer({
                 <p className="text-[10px] text-slate-400 mt-1">Be the first to write or filter the map boundaries.</p>
               </div>
             ) : (
-              filteredPosts.map((post) => (
+              filteredPosts.map((post) => {
+                const isLiked = post.userReaction === 'like' || post.userReaction === 'love_local';
+                const isSeconded = post.userReaction === 'second' || post.userReaction === 'second_this' || post.userReaction === 'agree';
+                const isDisliked = post.userReaction === 'dislike' || post.userReaction === 'not_for_me';
+                const isObjected = post.userReaction === 'object' || post.userReaction === 'bad_for_community' || post.userReaction === 'object';
+
+                return (
                 <article
                   key={post.id}
                   className={`bg-[#1c2541]/70 border p-4.5 rounded-2xl flex flex-col gap-3 relative overflow-hidden transition-all duration-300 hover:border-slate-600/70 ${
@@ -888,96 +1269,123 @@ export default function FluidLayoutContainer({
                         </span>
                       )}
                     </h4>
-                    <p className="text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap">{post.content}</p>
+                    <TruncatedContent content={post.content} />
                   </div>
 
                   {/* Attachment Media rendering */}
                   {post.mediaUrl && (
-                    <div className="relative w-full overflow-hidden rounded-xl border border-slate-700/50 mt-1 max-h-[160px]">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={post.mediaUrl}
-                        alt="Attachment"
-                        className="w-full object-cover"
-                      />
+                    <div className="relative w-full overflow-hidden rounded-xl border border-slate-700/50 mt-1.5 aspect-video bg-slate-950/40 flex items-center justify-center max-h-[280px]">
+                      {isVideoUrl(post.mediaUrl) ? (
+                        <video
+                          src={post.mediaUrl}
+                          controls
+                          className="w-full h-full object-contain"
+                        />
+                      ) : (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={post.mediaUrl}
+                          alt="Attachment"
+                          className="w-full h-full object-contain"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Directions Action */}
+                  {(post.isBeacon || post.userRole === 'business' || post.userType === 'business' || post.isProposal) && (
+                    <div className="mt-2 flex">
+                      <button
+                        onClick={() => {
+                          const coords = getPostCoordinates(post);
+                          const isApple = typeof navigator !== 'undefined' && /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
+                          const encodedLabel = encodeURIComponent(post.title);
+                          let url = `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`;
+                          if (isApple) {
+                            url = `maps://maps.apple.com/?q=${encodedLabel}&ll=${coords.lat},${coords.lng}`;
+                          }
+                          window.open(url, '_blank');
+                        }}
+                        className="flex items-center gap-1.5 text-[9px] text-[#00f5d4] hover:text-white font-extrabold bg-[#0b132b] hover:bg-[#1c2541] border border-[#00f5d4]/30 hover:border-[#00f5d4] px-2.5 py-1 rounded-xl transition-all active:scale-95 cursor-pointer shadow-md"
+                      >
+                        🗺️ Get Directions
+                      </button>
                     </div>
                   )}
 
                   {/* Post Reactions */}
                   {flags.enableReactions && (
                     <div className="border-t border-slate-800/80 pt-2.5 mt-1">
-                      {post.isProposal && flags.enableCivicProposals ? (
-                        <div className="flex flex-col gap-2 w-full">
-                          {/* Vote Split Ratio */}
-                          {(() => {
-                            const totalVotes = (post.seconds || 0) + (post.objections || 0)
-                            const agreePercent = totalVotes > 0 ? Math.round(((post.seconds || 0) / totalVotes) * 100) : 50
-                            return (
-                              <div className="flex flex-col gap-1 bg-[#0b132b] p-2 rounded-xl border border-slate-800">
-                                <div className="flex justify-between text-[9px] font-bold">
-                                  <span className="text-emerald-400">🤝 Agree ({agreePercent}%)</span>
-                                  <span className="text-[#d90429]">⚠️ Object ({100 - agreePercent}%)</span>
-                                </div>
-                                <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
-                                  <div className="h-full bg-emerald-500" style={{ width: `${agreePercent}%` }} />
-                                  <div className="h-full bg-[#d90429]" style={{ width: `${100 - agreePercent}%` }} />
-                                </div>
+                      {post.isProposal && flags.enableCivicProposals && (
+                        (() => {
+                          const totalVotes = (post.seconds || 0) + (post.objections || 0)
+                          const agreePercent = totalVotes > 0 ? Math.round(((post.seconds || 0) / totalVotes) * 100) : 50
+                          return (
+                            <div className="flex flex-col gap-1 bg-[#0b132b] p-2 rounded-xl border border-slate-800 mb-2.5">
+                              <div className="flex justify-between text-[9px] font-bold">
+                                <span className="text-emerald-400">🤝 Agree ({agreePercent}%)</span>
+                                <span className="text-[#d90429]">⚠️ Object ({100 - agreePercent}%)</span>
                               </div>
-                            )
-                          })()}
-
-                          {/* Proposal Actions */}
-                          <div className="flex gap-2 w-full">
-                            <button
-                              onClick={() => handleReact(post.id, 'second')}
-                              className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
-                                post.userReaction === 'second'
-                                  ? 'bg-emerald-500 border-transparent text-white'
-                                  : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                              }`}
-                            >
-                              🤝 Second Proposal ({post.seconds || 0})
-                            </button>
-                            <button
-                              onClick={() => handleReact(post.id, 'object')}
-                              className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
-                                post.userReaction === 'object'
-                                  ? 'bg-[#d90429] border-transparent text-white'
-                                  : 'bg-[#d90429]/10 border-[#d90429]/20 text-[#d90429]'
-                              }`}
-                            >
-                              ⚠️ Object ({post.objections || 0})
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => handleReact(post.id, 'like')}
-                            className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
-                              post.userReaction === 'like'
-                                ? 'bg-[#d90429] border-transparent text-white'
-                                : 'bg-[#d90429]/10 border-[#d90429]/20 text-[#d90429]'
-                            }`}
-                          >
-                            <Heart className="w-3.5 h-3.5" /> Like ({post.likes || 0})
-                          </button>
-                          <button
-                            onClick={() => handleReact(post.id, 'dislike')}
-                            className={`flex-1 py-1.5 px-3 rounded-lg border text-[10px] font-black flex items-center justify-center gap-1 active:scale-95 transition-all ${
-                              post.userReaction === 'dislike'
-                                ? 'bg-slate-800 border-transparent text-white'
-                                : 'bg-slate-800/10 border-slate-700/25 text-slate-400'
-                            }`}
-                          >
-                            <ThumbsDown className="w-3.5 h-3.5" /> Dislike ({post.dislikes || 0})
-                          </button>
-                        </div>
+                              <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden flex">
+                                <div className="h-full bg-emerald-500" style={{ width: `${agreePercent}%` }} />
+                                <div className="h-full bg-[#d90429]" style={{ width: `${100 - agreePercent}%` }} />
+                              </div>
+                              {flags.civicProposalVoting && (
+                                <div className="text-[8px] text-center text-slate-400 mt-0.5">
+                                  {totalVotes === 0 ? 'No votes cast yet' : `${totalVotes} total votes cast`}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })()
                       )}
+
+                      <div className="flex flex-wrap gap-1.5 text-[9px]">
+                        <button
+                          onClick={() => handleReact(post.id, 'love_local')}
+                          className={`py-1 px-2.5 rounded-full border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all ${
+                            isLiked
+                              ? 'bg-[#d90429] border-transparent text-white shadow-sm'
+                              : 'bg-[#d90429]/10 border-[#d90429]/20 text-[#d90429] hover:bg-[#d90429]/25'
+                          }`}
+                        >
+                          ❤️ Love Local ({post.likes || 0})
+                        </button>
+                        <button
+                          onClick={() => handleReact(post.id, 'second_this')}
+                          className={`py-1 px-2.5 rounded-full border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all ${
+                            isSeconded
+                              ? 'bg-emerald-600 border-transparent text-white shadow-sm'
+                              : 'bg-emerald-600/10 border-emerald-600/20 text-emerald-400 hover:bg-emerald-600/25'
+                          }`}
+                        >
+                          🤝 Second ({post.seconds || 0})
+                        </button>
+                        <button
+                          onClick={() => handleReact(post.id, 'not_for_me')}
+                          className={`py-1 px-2.5 rounded-full border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all ${
+                            isDisliked
+                              ? 'bg-slate-800 border-transparent text-white shadow-sm'
+                              : 'bg-slate-800/10 border-slate-700/25 text-slate-400 hover:bg-slate-850'
+                          }`}
+                        >
+                          🙅‍♂️ Not For Me ({post.dislikes || 0})
+                        </button>
+                        <button
+                          onClick={() => handleReact(post.id, 'bad_for_community')}
+                          className={`py-1 px-2.5 rounded-full border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all ${
+                            isObjected
+                              ? 'bg-amber-600 border-transparent text-white shadow-sm'
+                              : 'bg-amber-600/10 border-amber-600/20 text-amber-500 hover:bg-amber-600/25'
+                          }`}
+                        >
+                          ⚠️ Bad for Comm ({post.objections || 0})
+                        </button>
+                      </div>
                     </div>
                   )}
                 </article>
-              ))
+              )})
             )}
           </div>
         </div>

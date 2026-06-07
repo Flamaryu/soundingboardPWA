@@ -18,7 +18,8 @@ export async function POST(request: Request) {
       userId, 
       polygonGeoJson, 
       councilDistrictId, 
-      historicDistrictId 
+      historicDistrictId,
+      echoTimeDecay
     } = body
 
     const activeUserId = userId ? Number(userId) : 1
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
 
     // 1. Walking Mode (Fluid 0.5-mile circle)
     if (viewMode === 'walking') {
-      const posts = await fetchWalkingRadiusPosts(lng || -75.548, lat || 39.742, 800, activeUserId)
+      const posts = await fetchWalkingRadiusPosts(lng || -75.548, lat || 39.742, 800, activeUserId, echoTimeDecay)
       return NextResponse.json({ success: true, posts })
     }
 

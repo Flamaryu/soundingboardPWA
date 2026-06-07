@@ -50,6 +50,18 @@ export default async function Home({ searchParams }: PageProps) {
     enableMiniblogs: params['flag:enable-miniblogs'] !== undefined 
       ? params['flag:enable-miniblogs'] === 'true' 
       : await flags.enableMiniblogs(),
+    customLocalReactions: params['flag:custom-local-reactions'] !== undefined 
+      ? params['flag:custom-local-reactions'] === 'true' 
+      : await flags.customLocalReactions(),
+    civicProposalVoting: params['flag:civic-proposal-voting'] !== undefined 
+      ? params['flag:civic-proposal-voting'] === 'true' 
+      : await flags.civicProposalVoting(),
+    anonymousCitizenPosts: params['flag:anonymous-citizen-posts'] !== undefined 
+      ? params['flag:anonymous-citizen-posts'] === 'true' 
+      : await flags.anonymousCitizenPosts(),
+    echoTimeDecay: params['flag:echo-time-decay'] !== undefined 
+      ? params['flag:echo-time-decay'] === 'true' 
+      : await flags.echoTimeDecay(),
   }
   
   return (

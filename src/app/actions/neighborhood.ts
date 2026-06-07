@@ -12,19 +12,16 @@ let mockDbMemory: any = null
 
 // Helper to read the mock database file
 function readMockDb() {
-  if (mockDbMemory) return mockDbMemory
   try {
     const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
     if (fs.existsSync(filePath)) {
-      mockDbMemory = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-      return mockDbMemory
+      return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
     }
   } catch (e) {
     console.warn("Failed to read mock DB from file, using bundled fallback:", e)
   }
   // Safe deep clone of bundled data
-  mockDbMemory = JSON.parse(JSON.stringify(mockDbData))
-  return mockDbMemory
+  return JSON.parse(JSON.stringify(mockDbData))
 }
 
 // Interface for resolved neighborhood
@@ -344,12 +341,30 @@ export async function resolveAddress(address: string): Promise<{
   lat: number
   neighborhood: ResolvedNeighborhood
 }> {
-  // Simple smart keyword matcher for common Wilmington areas to simulate high-quality geocoding
   const normalized = address.toLowerCase()
   let lng = -75.548
   let lat = 39.742 // defaults to Center City
 
-  // Match landmarks / neighborhoods to coordinate centers
+  // 1. Try real geocoding via OpenStreetMap Nominatim API (with Wilmington context)
+  try {
+    const query = encodeURIComponent(`${address}, Wilmington, DE`)
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=1`, {
+      headers: {
+        'User-Agent': 'SoundingBoardPWA/1.0 (contact: markeviswilliams@gmail.com)'
+      }
+    })
+    if (res.ok) {
+      const data = await res.json()
+      if (data && data.length > 0) {
+        lng = parseFloat(data[0].lon)
+        lat = parseFloat(data[0].lat)
+      }
+    }
+  } catch (err) {
+    console.warn("Nominatim geocoding failed, falling back to local keyword matcher:", err)
+  }
+
+  // 2. Local keyword overrides for exact matching in mocks
   if (normalized.includes('rockford') || normalized.includes('tower')) {
     lng = -75.578; lat = 39.770 // Rockford Park
   } else if (normalized.includes('highlands')) {

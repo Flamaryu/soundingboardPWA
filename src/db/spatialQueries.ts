@@ -43,18 +43,15 @@ import mockDbData from './mock_db.json'
 
 let mockDbMemory: any = null
 function readMockDb() {
-  if (mockDbMemory) return mockDbMemory
   try {
     const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
     if (fs.existsSync(filePath)) {
-      mockDbMemory = JSON.parse(fs.readFileSync(filePath, 'utf-8'))
-      return mockDbMemory
+      return JSON.parse(fs.readFileSync(filePath, 'utf-8'))
     }
   } catch (e) {
     console.warn("Failed to read mock DB from file, using bundled fallback:", e)
   }
-  mockDbMemory = JSON.parse(JSON.stringify(mockDbData))
-  return mockDbMemory
+  return JSON.parse(JSON.stringify(mockDbData))
 }
 
 // Format mock post helper
@@ -84,9 +81,10 @@ export async function fetchWalkingRadiusPosts(
   lng: number,
   lat: number,
   radiusMeters = 800,
-  activeUserId = 1
+  activeUserId = 1,
+  echoTimeDecay = true
 ) {
-  console.log(`📡 Fetching posts in Walking Radius: lng=${lng}, lat=${lat}, radius=${radiusMeters}m`)
+  console.log(`📡 Fetching posts in Walking Radius: lng=${lng}, lat=${lat}, radius=${radiusMeters}m (echoTimeDecay=${echoTimeDecay})`)
 
   if (isMockDb()) {
     const mockDb = readMockDb()
@@ -104,6 +102,21 @@ export async function fetchWalkingRadiusPosts(
     const matchedPosts = mockDb.posts.filter((post: any) => {
       const centroid = nhCentroids.get(post.neighborhoodId) || { lng: -75.548, lat: 39.742 }
       const dist = getHaversineDistance(lng, lat, centroid.lng, centroid.lat)
+
+      if (echoTimeDecay) {
+        const reactions = mockDb.postReactions || []
+        const civicVotes = mockDb.civicVotes || []
+        const loveLocalCount = reactions.filter((r: any) => r.postId === post.id && r.type === 'love_local').length
+        const secondThisCount = reactions.filter((r: any) => r.postId === post.id && r.type === 'second_this').length
+        const civicVotesCount = civicVotes.filter((v: any) => v.postId === post.id).length
+        
+        const elapsedHours = (Date.now() - new Date(post.createdAt).getTime()) / (3600 * 1000)
+        const decay = elapsedHours * 50
+        const calculatedRadius = 800 + (loveLocalCount * 200) + (secondThisCount * 200) + (civicVotesCount * 300) - decay
+        const dynamicRadius = Math.max(800, calculatedRadius)
+        return dist <= dynamicRadius
+      }
+
       return dist <= radiusMeters
     })
 
@@ -113,6 +126,55 @@ export async function fetchWalkingRadiusPosts(
 
   // Postgres PostGIS query
   try {
+    if (echoTimeDecay) {
+      const rows = await db.execute(sql`
+        SELECT p.*,
+               u.name as "userName",
+               u.role as "userRole",
+               n.name as "neighborhoodName",
+               r.type as "userReaction",
+               (
+                 SELECT GREATEST(800, 
+                   800 
+                   + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'love_local') * 200
+                   + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'second_this') * 200
+                   + (SELECT COUNT(*) FROM civic_votes cv WHERE cv.post_id = p.id) * 300
+                   - (EXTRACT(EPOCH FROM (NOW() - p.created_at)) / 3600 * 50)
+                 )
+               ) AS max_reach_meters
+        FROM posts p
+        JOIN users u ON p.user_id = u.id
+        JOIN neighborhoods n ON p.neighborhood_id = n.id
+        LEFT JOIN post_reactions r ON p.id = r.post_id AND r.user_id = ${activeUserId}
+        WHERE ST_DWithin(
+          COALESCE(p.location, ST_SetSRID(ST_MakePoint(u.longitude, u.latitude), 4326)::geography),
+          ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+          GREATEST(800, 
+            800 
+            + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'love_local') * 200
+            + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'second_this') * 200
+            + (SELECT COUNT(*) FROM civic_votes cv WHERE cv.post_id = p.id) * 300
+            - (EXTRACT(EPOCH FROM (NOW() - p.created_at)) / 3600 * 50)
+          )
+        )
+        ORDER BY p.created_at DESC
+      `)
+
+      return rows.rows.map((row: any) => ({
+        ...row,
+        userName: row.anonymous_author_name ? row.anonymous_author_name : row.userName,
+        userRole: row.anonymous_author_name ? 'citizen' : row.userRole,
+        isProposal: row.is_proposal ?? false,
+        likes: row.likes ?? 0,
+        seconds: row.seconds ?? 0,
+        dislikes: row.dislikes ?? 0,
+        objections: row.objections ?? 0,
+        isBeacon: row.is_beacon ?? false,
+        isPinned: row.is_pinned ?? false,
+        createdAt: new Date(row.created_at).toISOString()
+      }))
+    }
+
     const rows = await db
       .select({
         id: schema.posts.id,
@@ -137,7 +199,8 @@ export async function fetchWalkingRadiusPosts(
         isBeacon: schema.posts.isBeacon,
         beaconExpiresAt: schema.posts.beaconExpiresAt,
         isPinned: schema.posts.isPinned,
-        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
+        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
+        anonymousAuthorName: schema.posts.anonymousAuthorName
       })
       .from(schema.posts)
       .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
@@ -152,11 +215,15 @@ export async function fetchWalkingRadiusPosts(
       )
       .orderBy(sql`created_at DESC`)
 
-    return rows
+    return rows.map((r: any) => ({
+      ...r,
+      userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
+      userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
+    }))
   } catch (err) {
     console.error('PostgreSQL walking radius query failed, fallback to mock:', err)
     markDbAsFailed()
-    return fetchWalkingRadiusPosts(lng, lat, radiusMeters, activeUserId)
+    return fetchWalkingRadiusPosts(lng, lat, radiusMeters, activeUserId, echoTimeDecay)
   }
 }
 
