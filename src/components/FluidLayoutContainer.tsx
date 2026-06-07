@@ -99,25 +99,37 @@ const getBoundaryCentroid = (boundary: any): { lat: number; lng: number } | null
   return null
 }
 
-function TruncatedContent({ content }: { content: string }) {
-  const [expanded, setExpanded] = useState(false)
+interface TruncatedContentProps {
+  content: string
+  isExpanded?: boolean
+  isAlwaysExpanded?: boolean
+  onToggle?: () => void
+}
+
+function TruncatedContent({ content, isExpanded, isAlwaysExpanded, onToggle }: TruncatedContentProps) {
+  const [localExpanded, setLocalExpanded] = useState(false)
   const limit = 280
 
-  if (content.length <= limit) {
+  const expanded = isAlwaysExpanded || (isExpanded !== undefined ? isExpanded : localExpanded)
+  const toggle = onToggle || (() => setLocalExpanded(!localExpanded))
+
+  if (isAlwaysExpanded || content.length <= limit) {
     return <p className="text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap">{content}</p>
   }
 
   const displayedText = expanded ? content : content.slice(0, limit) + '...'
 
   return (
-    <div>
+    <div className="cursor-pointer select-none animate-fadeIn" onClick={(e) => {
+      e.stopPropagation()
+      toggle()
+    }}>
       <p className="text-[11px] text-slate-300 leading-relaxed whitespace-pre-wrap">{displayedText}</p>
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="text-[10px] text-[#00f5d4] font-bold hover:underline mt-1 focus:outline-none"
+      <span
+        className="inline-block text-[10px] text-[#00f5d4] font-bold hover:underline mt-1"
       >
         {expanded ? 'Show Less' : 'Read More'}
-      </button>
+      </span>
     </div>
   )
 }
@@ -230,6 +242,15 @@ export default function FluidLayoutContainer({
   const sheetOffsetRef = useRef(0)
   const sheetHeightRef = useRef(0)
   const translateYRef = useRef(0)
+
+  // Card Expansion State mapping
+  const [expandedPosts, setExpandedPosts] = useState<Record<number, boolean>>({})
+  const toggleExpand = (postId: number) => {
+    setExpandedPosts(prev => ({
+      ...prev,
+      [postId]: !prev[postId]
+    }))
+  }
 
   // Form State
   const [showCreateForm, setShowCreateForm] = useState(false)
@@ -552,21 +573,21 @@ export default function FluidLayoutContainer({
         let seconds = post.seconds || 0
         let objections = post.objections || 0
         
-        const oldReaction = post.userReaction
-        let userReaction = post.userReaction
+        const oldVote = post.userVote
+        let userVote = post.userVote
 
-        if (oldReaction === voteType) {
+        if (oldVote === voteType) {
           // Untoggle
-          userReaction = null
+          userVote = null
           if (voteType === 'agree') seconds = Math.max(0, seconds - 1)
           else objections = Math.max(0, objections - 1)
         } else {
           // Decrement old
-          if (oldReaction === 'agree') seconds = Math.max(0, seconds - 1)
-          else if (oldReaction === 'object') objections = Math.max(0, objections - 1)
+          if (oldVote === 'agree') seconds = Math.max(0, seconds - 1)
+          else if (oldVote === 'object') objections = Math.max(0, objections - 1)
           
           // Increment new
-          userReaction = voteType
+          userVote = voteType
           if (voteType === 'agree') seconds++
           else objections++
         }
@@ -575,7 +596,7 @@ export default function FluidLayoutContainer({
           ...post,
           seconds,
           objections,
-          userReaction
+          userVote
         }
       })
     })
@@ -590,9 +611,9 @@ export default function FluidLayoutContainer({
   const getSheetSnapY = (state: DragState) => {
     if (typeof window === 'undefined') return 0
     const height = window.innerHeight
-    if (state === 'expanded') return height * 0.1 // 10% from top
+    if (state === 'expanded') return 0 // covers full viewport height
     if (state === 'half') return height * 0.5 // 50% height
-    return height - 85 // collapsed, leaving just the header bar visible
+    return height * 0.5 // Collapsed state showing map + feed header/first post
   }
 
   const handleStartDrag = (y: number) => {
@@ -623,9 +644,9 @@ export default function FluidLayoutContainer({
     
     const height = window.innerHeight
     const snapPoints: { state: DragState; y: number }[] = [
-      { state: 'expanded', y: height * 0.1 },
+      { state: 'expanded', y: 0 },
       { state: 'half', y: height * 0.5 },
-      { state: 'collapsed', y: height - 85 }
+      { state: 'collapsed', y: height * 0.5 }
     ]
 
     // Find closest snap point
@@ -828,15 +849,17 @@ export default function FluidLayoutContainer({
 
       {/* 2. Drag-snap Snappable Bottom Sheet */}
       <div
-        className="absolute left-0 right-0 z-30 bg-[#121824]/98 border-t border-slate-700/50 shadow-2xl rounded-t-[36px] backdrop-blur-lg flex flex-col transition-transform pointer-events-none"
+        className={`absolute left-0 right-0 z-30 bg-[#121824]/98 border-t border-slate-700/50 shadow-2xl backdrop-blur-lg flex flex-col pointer-events-none ${
+          sheetState === 'expanded' && !isDragging ? 'rounded-t-none' : 'rounded-t-[36px]'
+        }`}
         style={{
-          height: '100%',
-          transform: !isMounted
-            ? 'translateY(0px)'
+          bottom: 0,
+          top: !isMounted
+            ? '0px'
             : (isDragging 
-                ? `translateY(${translateY}px)` 
-                : `translateY(${getSheetSnapY(sheetState)}px)`),
-          transition: isDragging ? 'none' : 'transform 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.05)'
+                ? `${translateY}px` 
+                : `${getSheetSnapY(sheetState)}px`),
+          transition: isDragging ? 'none' : 'top 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.05)'
         }}
       >
         {/* DRAG HANDLE BAR */}
@@ -969,7 +992,7 @@ export default function FluidLayoutContainer({
           )}
 
           {/* SCROLLABLE FEED LIST */}
-          <div className="flex-1 overflow-y-auto pr-1 flex flex-col gap-4">
+          <div className="flex flex-col gap-4 overflow-y-auto overscroll-contain w-full h-full pb-24">
             
             {/* Create Post Form */}
             {showCreateForm && (
@@ -1202,10 +1225,13 @@ export default function FluidLayoutContainer({
                 const isDisliked = post.userReaction === 'dislike' || post.userReaction === 'not_for_me';
                 const isObjected = post.userReaction === 'object' || post.userReaction === 'bad_for_community' || post.userReaction === 'object';
 
+                const isAlwaysExpanded = viewMode === 'walking' || viewMode === 'neighborhood';
+                const isExpanded = isAlwaysExpanded || !!expandedPosts[post.id];
                 return (
                 <article
                   key={post.id}
-                  className={`bg-[#1c2541]/70 border p-4.5 rounded-2xl flex flex-col gap-3 relative overflow-hidden transition-all duration-300 hover:border-slate-600/70 ${
+                  onClick={() => toggleExpand(post.id)}
+                  className={`flex-shrink-0 w-full bg-[#1c2541]/70 hover:bg-[#1c2541]/95 border p-4.5 rounded-2xl flex flex-col gap-3 relative overflow-hidden transition-all duration-300 hover:border-slate-600/70 cursor-pointer ${
                     post.isBeacon 
                       ? 'border-[#d90429] shadow-lg shadow-[#d90429]/10 ring-1 ring-[#d90429]/30' 
                       : 'border-slate-700/40'
@@ -1269,34 +1295,43 @@ export default function FluidLayoutContainer({
                         </span>
                       )}
                     </h4>
-                    <TruncatedContent content={post.content} />
+                    <TruncatedContent 
+                      content={post.content} 
+                      isExpanded={isExpanded} 
+                      isAlwaysExpanded={isAlwaysExpanded} 
+                      onToggle={() => toggleExpand(post.id)} 
+                    />
                   </div>
 
                   {/* Attachment Media rendering */}
-                  {post.mediaUrl && (
-                    <div className="relative w-full overflow-hidden rounded-xl border border-slate-700/50 mt-1.5 aspect-video bg-slate-950/40 flex items-center justify-center max-h-[280px]">
+                  {post.mediaUrl && post.mediaUrl.trim() !== '' && (
+                    <div 
+                      className="relative w-full max-h-80 flex items-center justify-center bg-black/10 rounded-md overflow-hidden mt-3"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       {isVideoUrl(post.mediaUrl) ? (
                         <video
                           src={post.mediaUrl}
                           controls
-                          className="w-full h-full object-contain"
+                          className="w-full h-full max-h-80 object-contain"
                         />
                       ) : (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
                           src={post.mediaUrl}
                           alt="Attachment"
-                          className="w-full h-full object-contain"
+                          className="w-full h-full max-h-80 object-contain"
                         />
                       )}
                     </div>
                   )}
 
                   {/* Directions Action */}
-                  {(post.isBeacon || post.userRole === 'business' || post.userType === 'business' || post.isProposal) && (
-                    <div className="mt-2 flex">
+                  {isExpanded && (post.isBeacon || post.userRole === 'business' || post.userType === 'business' || post.isProposal) && (
+                    <div className="mt-2 flex" onClick={(e) => e.stopPropagation()}>
                       <button
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           const coords = getPostCoordinates(post);
                           const isApple = typeof navigator !== 'undefined' && /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
                           const encodedLabel = encodeURIComponent(post.title);
@@ -1314,14 +1349,16 @@ export default function FluidLayoutContainer({
                   )}
 
                   {/* Post Reactions */}
-                  {flags.enableReactions && (
-                    <div className="border-t border-slate-800/80 pt-2.5 mt-1">
+                  {isExpanded && flags.enableReactions && (
+                    <div className="border-t border-slate-800/80 pt-2.5 mt-1" onClick={(e) => e.stopPropagation()}>
                       {post.isProposal && flags.enableCivicProposals && (
                         (() => {
                           const totalVotes = (post.seconds || 0) + (post.objections || 0)
                           const agreePercent = totalVotes > 0 ? Math.round(((post.seconds || 0) / totalVotes) * 100) : 50
+                          const hasVotedAgree = post.userVote === 'agree'
+                          const hasVotedObject = post.userVote === 'object'
                           return (
-                            <div className="flex flex-col gap-1 bg-[#0b132b] p-2 rounded-xl border border-slate-800 mb-2.5">
+                            <div className="flex flex-col gap-2 bg-[#0b132b] p-3 rounded-xl border border-slate-800 mb-2.5">
                               <div className="flex justify-between text-[9px] font-bold">
                                 <span className="text-emerald-400">🤝 Agree ({agreePercent}%)</span>
                                 <span className="text-[#d90429]">⚠️ Object ({100 - agreePercent}%)</span>
@@ -1330,6 +1367,30 @@ export default function FluidLayoutContainer({
                                 <div className="h-full bg-emerald-500" style={{ width: `${agreePercent}%` }} />
                                 <div className="h-full bg-[#d90429]" style={{ width: `${100 - agreePercent}%` }} />
                               </div>
+                              {flags.civicProposalVoting && (
+                                <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-slate-800/60" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleCivicVote(post.id, 'agree'); }}
+                                    className={`flex-1 py-1 px-2.5 rounded-lg border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all text-[9px] cursor-pointer ${
+                                      hasVotedAgree
+                                        ? 'bg-emerald-600 border-transparent text-white shadow-sm'
+                                        : 'bg-emerald-600/10 border-emerald-600/20 text-emerald-400 hover:bg-emerald-600/25'
+                                    }`}
+                                  >
+                                    🤝 Vote Agree ({post.seconds || 0})
+                                  </button>
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleCivicVote(post.id, 'object'); }}
+                                    className={`flex-1 py-1 px-2.5 rounded-lg border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all text-[9px] cursor-pointer ${
+                                      hasVotedObject
+                                        ? 'bg-amber-600 border-transparent text-white shadow-sm'
+                                        : 'bg-amber-600/10 border-amber-600/20 text-amber-500 hover:bg-amber-600/25'
+                                    }`}
+                                  >
+                                    ⚠️ Vote Object ({post.objections || 0})
+                                  </button>
+                                </div>
+                              )}
                               {flags.civicProposalVoting && (
                                 <div className="text-[8px] text-center text-slate-400 mt-0.5">
                                   {totalVotes === 0 ? 'No votes cast yet' : `${totalVotes} total votes cast`}
@@ -1342,7 +1403,7 @@ export default function FluidLayoutContainer({
 
                       <div className="flex flex-wrap gap-1.5 text-[9px]">
                         <button
-                          onClick={() => handleReact(post.id, 'love_local')}
+                          onClick={(e) => { e.stopPropagation(); handleReact(post.id, 'love_local'); }}
                           className={`py-1 px-2.5 rounded-full border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all ${
                             isLiked
                               ? 'bg-[#d90429] border-transparent text-white shadow-sm'
@@ -1352,7 +1413,7 @@ export default function FluidLayoutContainer({
                           ❤️ Love Local ({post.likes || 0})
                         </button>
                         <button
-                          onClick={() => handleReact(post.id, 'second_this')}
+                          onClick={(e) => { e.stopPropagation(); handleReact(post.id, 'second_this'); }}
                           className={`py-1 px-2.5 rounded-full border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all ${
                             isSeconded
                               ? 'bg-emerald-600 border-transparent text-white shadow-sm'
@@ -1362,7 +1423,7 @@ export default function FluidLayoutContainer({
                           🤝 Second ({post.seconds || 0})
                         </button>
                         <button
-                          onClick={() => handleReact(post.id, 'not_for_me')}
+                          onClick={(e) => { e.stopPropagation(); handleReact(post.id, 'not_for_me'); }}
                           className={`py-1 px-2.5 rounded-full border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all ${
                             isDisliked
                               ? 'bg-slate-800 border-transparent text-white shadow-sm'
@@ -1372,7 +1433,7 @@ export default function FluidLayoutContainer({
                           🙅‍♂️ Not For Me ({post.dislikes || 0})
                         </button>
                         <button
-                          onClick={() => handleReact(post.id, 'bad_for_community')}
+                          onClick={(e) => { e.stopPropagation(); handleReact(post.id, 'bad_for_community'); }}
                           className={`py-1 px-2.5 rounded-full border font-bold flex items-center justify-center gap-1 active:scale-95 transition-all ${
                             isObjected
                               ? 'bg-amber-600 border-transparent text-white shadow-sm'

@@ -76,6 +76,9 @@ export async function getFeedPosts(
       const reaction = (mockDb.postReactions || []).find(
         (r: any) => r.postId === post.id && r.userId === activeUserId
       )
+      const vote = (mockDb.civicVotes || []).find(
+        (v: any) => v.postId === post.id && v.userId === activeUserId
+      )
 
       return {
         ...post,
@@ -87,7 +90,8 @@ export async function getFeedPosts(
         userName: post.anonymousAuthorName ? post.anonymousAuthorName : (user ? user.name : 'Unknown User'),
         userRole: post.anonymousAuthorName ? 'citizen' : (user ? user.role : 'citizen'),
         neighborhoodName: nh ? nh.name : 'Wilmington',
-        userReaction: reaction ? reaction.type : null
+        userReaction: reaction ? reaction.type : null,
+        userVote: vote ? vote.vote : null
       }
     }).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   }
@@ -115,6 +119,7 @@ export async function getFeedPosts(
           userRole: schema.users.role,
           neighborhoodName: schema.neighborhoods.name,
           userReaction: schema.postReactions.type,
+          userVote: schema.civicVotes.vote,
           councilDistrictId: schema.posts.councilDistrictId,
           historicDistrictId: schema.posts.historicDistrictId,
           isBeacon: schema.posts.isBeacon,
@@ -127,6 +132,7 @@ export async function getFeedPosts(
         .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
         .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
         .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
+        .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
         .where(eq(schema.posts.neighborhoodId, neighborhoodId))
         .orderBy(sql`created_at DESC`)
       
@@ -174,6 +180,7 @@ export async function getFeedPosts(
           userRole: schema.users.role,
           neighborhoodName: schema.neighborhoods.name,
           userReaction: schema.postReactions.type,
+          userVote: schema.civicVotes.vote,
           councilDistrictId: schema.posts.councilDistrictId,
           historicDistrictId: schema.posts.historicDistrictId,
           isBeacon: schema.posts.isBeacon,
@@ -186,6 +193,7 @@ export async function getFeedPosts(
         .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
         .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
         .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
+        .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
         .where(inArray(schema.posts.neighborhoodId, siblingIds))
         .orderBy(sql`created_at DESC`)
       
@@ -215,6 +223,7 @@ export async function getFeedPosts(
           userRole: schema.users.role,
           neighborhoodName: schema.neighborhoods.name,
           userReaction: schema.postReactions.type,
+          userVote: schema.civicVotes.vote,
           councilDistrictId: schema.posts.councilDistrictId,
           historicDistrictId: schema.posts.historicDistrictId,
           isBeacon: schema.posts.isBeacon,
@@ -227,6 +236,7 @@ export async function getFeedPosts(
         .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
         .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
         .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
+        .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
         .orderBy(sql`created_at DESC`)
       
       return rows.map((r: any) => ({
@@ -260,6 +270,9 @@ export async function getFeedPosts(
       const reaction = (mockDb.postReactions || []).find(
         (r: any) => r.postId === post.id && r.userId === activeUserId
       )
+      const vote = (mockDb.civicVotes || []).find(
+        (v: any) => v.postId === post.id && v.userId === activeUserId
+      )
       return {
         ...post,
         isProposal: post.isProposal ?? false,
@@ -270,7 +283,8 @@ export async function getFeedPosts(
         userName: post.anonymousAuthorName ? post.anonymousAuthorName : (user ? user.name : 'Unknown User'),
         userRole: post.anonymousAuthorName ? 'citizen' : (user ? user.role : 'citizen'),
         neighborhoodName: nh ? nh.name : 'Wilmington',
-        userReaction: reaction ? reaction.type : null
+        userReaction: reaction ? reaction.type : null,
+        userVote: vote ? vote.vote : null
       }
     }).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   }

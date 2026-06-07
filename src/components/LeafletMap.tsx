@@ -83,8 +83,8 @@ export default function LeafletMap({
       subdomains: 'abcd'
     }).addTo(map)
 
-    // Add custom zoom control at bottom right
-    L.control.zoom({ position: 'bottomright' }).addTo(map)
+    // Add custom zoom control at top right (offset clear of header)
+    L.control.zoom({ position: 'topright' }).addTo(map)
 
     // Setup debounced move/zoom listener (300ms)
     let debounceTimer: NodeJS.Timeout | null = null;
@@ -490,6 +490,9 @@ export default function LeafletMap({
           box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3) !important;
           border-radius: 12px !important;
           overflow: hidden;
+        }
+        .leaflet-top.leaflet-right {
+          top: 75px !important;
         }
         .leaflet-bar a {
           background-color: #1c2541 !important;
