@@ -20,11 +20,13 @@ Rather than relying on flat, chronological feed algorithms that get clogged with
 
 Reach expands dynamically through community validation and external shares ("Ripples"), but decays naturally over time or when flagged by the community for toxicity. To prevent inter-city bleeding, post reach is strictly walled-off at the city limits.
 
-[![Echo Simulator Preview](./docs/simulator-screenshot.png)](https://soundingboard-pwa.vercel.app/simulator)
+<a href="https://soundingboard-pwa.vercel.app/simulator" target="_blank">
+  <img src="./docs/simulator-screenshot.png" alt="Echo Simulator Preview" width="350" />
+</a>
+
 *👆 Click to try the live interactive algorithm simulator.*
 
 ---
-
 ## 🛡️ Privacy First: Strict Location & Data Policy
 
 Our platform is engineered with structural privacy constraints to ensure local feedback remains authentic without exposing user safety:
