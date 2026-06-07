@@ -61,6 +61,9 @@ function formatMockPost(post: any, mockDb: any, activeUserId: number) {
   const reaction = (mockDb.postReactions || []).find(
     (r: any) => r.postId === post.id && r.userId === activeUserId
   )
+  const vote = (mockDb.civicVotes || []).find(
+    (v: any) => v.postId === post.id && v.userId === activeUserId
+  )
 
   return {
     ...post,
@@ -69,10 +72,11 @@ function formatMockPost(post: any, mockDb: any, activeUserId: number) {
     seconds: post.seconds ?? 0,
     dislikes: post.dislikes ?? 0,
     objections: post.objections ?? 0,
-    userName: user ? user.name : 'Unknown User',
-    userRole: user ? user.role : 'citizen',
+    userName: post.anonymousAuthorName ? post.anonymousAuthorName : (user ? user.name : 'Unknown User'),
+    userRole: post.anonymousAuthorName ? 'citizen' : (user ? user.role : 'citizen'),
     neighborhoodName: nh ? nh.name : 'Wilmington',
-    userReaction: reaction ? reaction.type : null
+    userReaction: reaction ? reaction.type : null,
+    userVote: vote ? vote.vote : null
   }
 }
 
@@ -133,6 +137,7 @@ export async function fetchWalkingRadiusPosts(
                u.role as "userRole",
                n.name as "neighborhoodName",
                r.type as "userReaction",
+               cv.vote as "userVote",
                (
                  SELECT GREATEST(800, 
                    800 
@@ -146,6 +151,7 @@ export async function fetchWalkingRadiusPosts(
         JOIN users u ON p.user_id = u.id
         JOIN neighborhoods n ON p.neighborhood_id = n.id
         LEFT JOIN post_reactions r ON p.id = r.post_id AND r.user_id = ${activeUserId}
+        LEFT JOIN civic_votes cv ON p.id = cv.post_id AND cv.user_id = ${activeUserId}
         WHERE ST_DWithin(
           COALESCE(p.location, ST_SetSRID(ST_MakePoint(u.longitude, u.latitude), 4326)::geography),
           ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
@@ -164,6 +170,7 @@ export async function fetchWalkingRadiusPosts(
         ...row,
         userName: row.anonymous_author_name ? row.anonymous_author_name : row.userName,
         userRole: row.anonymous_author_name ? 'citizen' : row.userRole,
+        userVote: row.userVote,
         isProposal: row.is_proposal ?? false,
         likes: row.likes ?? 0,
         seconds: row.seconds ?? 0,
@@ -194,6 +201,7 @@ export async function fetchWalkingRadiusPosts(
         userRole: schema.users.role,
         neighborhoodName: schema.neighborhoods.name,
         userReaction: schema.postReactions.type,
+        userVote: schema.civicVotes.vote,
         councilDistrictId: schema.posts.councilDistrictId,
         historicDistrictId: schema.posts.historicDistrictId,
         isBeacon: schema.posts.isBeacon,
@@ -206,6 +214,7 @@ export async function fetchWalkingRadiusPosts(
       .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
       .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
       .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
+      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
       .where(
         sql`ST_DWithin(
           COALESCE(${schema.posts.location}, ST_SetSRID(ST_MakePoint(${schema.users.longitude}, ${schema.users.latitude}), 4326)::geography),
@@ -289,17 +298,20 @@ export async function fetchBoundaryPosts(
         userRole: schema.users.role,
         neighborhoodName: schema.neighborhoods.name,
         userReaction: schema.postReactions.type,
+        userVote: schema.civicVotes.vote,
         councilDistrictId: schema.posts.councilDistrictId,
         historicDistrictId: schema.posts.historicDistrictId,
         isBeacon: schema.posts.isBeacon,
         beaconExpiresAt: schema.posts.beaconExpiresAt,
         isPinned: schema.posts.isPinned,
-        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
+        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
+        anonymousAuthorName: schema.posts.anonymousAuthorName
       })
       .from(schema.posts)
       .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
       .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
       .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
+      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
       .where(
         sql`ST_Contains(
           ST_SetSRID(ST_GeomFromGeoJSON(${geojsonStr}), 4326),
@@ -308,7 +320,11 @@ export async function fetchBoundaryPosts(
       )
       .orderBy(sql`created_at DESC`)
 
-    return rows
+    return rows.map((r: any) => ({
+      ...r,
+      userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
+      userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
+    }))
   } catch (err) {
     console.error('PostgreSQL boundary query failed, fallback to mock:', err)
     markDbAsFailed()
@@ -353,21 +369,28 @@ export async function fetchCouncilDistrictPosts(
         userRole: schema.users.role,
         neighborhoodName: schema.neighborhoods.name,
         userReaction: schema.postReactions.type,
+        userVote: schema.civicVotes.vote,
         councilDistrictId: schema.posts.councilDistrictId,
         historicDistrictId: schema.posts.historicDistrictId,
         isBeacon: schema.posts.isBeacon,
         beaconExpiresAt: schema.posts.beaconExpiresAt,
         isPinned: schema.posts.isPinned,
-        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
+        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
+        anonymousAuthorName: schema.posts.anonymousAuthorName
       })
       .from(schema.posts)
       .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
       .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
       .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
+      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
       .where(eq(schema.posts.councilDistrictId, councilDistrictId))
       .orderBy(sql`created_at DESC`)
 
-    return rows
+    return rows.map((r: any) => ({
+      ...r,
+      userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
+      userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
+    }))
   } catch (err) {
     console.error('PostgreSQL council district query failed, fallback to mock:', err)
     markDbAsFailed()
@@ -411,21 +434,28 @@ export async function fetchHistoricDistrictPosts(
         userRole: schema.users.role,
         neighborhoodName: schema.neighborhoods.name,
         userReaction: schema.postReactions.type,
+        userVote: schema.civicVotes.vote,
         councilDistrictId: schema.posts.councilDistrictId,
         historicDistrictId: schema.posts.historicDistrictId,
         isBeacon: schema.posts.isBeacon,
         beaconExpiresAt: schema.posts.beaconExpiresAt,
         isPinned: schema.posts.isPinned,
-        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId
+        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
+        anonymousAuthorName: schema.posts.anonymousAuthorName
       })
       .from(schema.posts)
       .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
       .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
       .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
+      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
       .where(eq(schema.posts.historicDistrictId, historicDistrictId))
       .orderBy(sql`created_at DESC`)
 
-    return rows
+    return rows.map((r: any) => ({
+      ...r,
+      userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
+      userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
+    }))
   } catch (err) {
     console.error('PostgreSQL historic district query failed, fallback to mock:', err)
     markDbAsFailed()
