@@ -20,7 +20,7 @@ Rather than relying on flat, chronological feed algorithms that get clogged with
 
 Reach expands dynamically through community validation and external shares ("Ripples"), but decays naturally over time or when flagged by the community for toxicity. To prevent inter-city bleeding, post reach is strictly walled-off at the city limits.
 
-[![Echo Simulator Preview](./docs/simulator-screenshot.png)](https://[your-app-url]/simulator)
+[![Echo Simulator Preview](./docs/simulator-screenshot.png)](https://soundingboard-pwa.vercel.app/simulator)
 *👆 Click to try the live interactive algorithm simulator.*
 
 ---
