@@ -14,6 +14,19 @@ export const geometry = customType<{ data: string; driverData: string }>({
   }
 })
 
+// Custom PostGIS Point Type
+export const geographyPoint = customType<{ data: string; driverData: string }>({
+  dataType() {
+    return 'geography(Point, 4326)'
+  },
+  toDriver(value: string) {
+    return value
+  },
+  fromDriver(value: string) {
+    return value
+  }
+})
+
 export const states = pgTable('states', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
@@ -24,6 +37,18 @@ export const cities = pgTable('cities', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
   stateId: integer('state_id').references(() => states.id).notNull(),
+})
+
+export const councilDistricts = pgTable('council_districts', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  boundary: geometry('boundary'), // stores spatial MultiPolygon coordinates
+})
+
+export const historicDistricts = pgTable('historic_districts', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  boundary: geometry('boundary'), // stores spatial MultiPolygon coordinates
 })
 
 export const planningDistricts = pgTable('planning_districts', {
@@ -43,7 +68,7 @@ export const users = pgTable('users', {
   id: serial('id').primaryKey(),
   name: text('name').notNull(),
   email: text('email').notNull().unique(),
-  role: text('role', { enum: ['citizen', 'business'] }).notNull().default('citizen'),
+  role: text('role', { enum: ['citizen', 'business', 'nonprofit', 'political'] }).notNull().default('citizen'),
   address: text('address'),
   latitude: doublePrecision('latitude'),
   longitude: doublePrecision('longitude'),
@@ -56,7 +81,7 @@ export const posts = pgTable('posts', {
   content: text('content').notNull(), // Stories, Mini-blogs, Event text
   type: text('type', { enum: ['story', 'miniblog', 'short'] }).notNull(),
   mediaUrl: text('media_url'), // S3, CDN, YouTube, image links
-  userType: text('user_type', { enum: ['citizen', 'business'] }).notNull(),
+  userType: text('user_type', { enum: ['citizen', 'business', 'nonprofit', 'political'] }).notNull(),
   userId: integer('user_id').references(() => users.id).notNull(),
   neighborhoodId: integer('neighborhood_id').references(() => neighborhoods.id).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -65,6 +90,15 @@ export const posts = pgTable('posts', {
   seconds: integer('seconds').default(0).notNull(),
   dislikes: integer('dislikes').default(0).notNull(),
   objections: integer('objections').default(0).notNull(),
+  location: geographyPoint('location'), // geographyPoint for ST_DWithin queries
+  councilDistrictId: integer('council_district_id').references(() => councilDistricts.id),
+  historicDistrictId: integer('historic_district_id').references(() => historicDistricts.id),
+  isBeacon: boolean('is_beacon').default(false).notNull(),
+  beaconExpiresAt: timestamp('beacon_expires_at'),
+  isPinned: boolean('is_pinned').default(false).notNull(),
+  pinnedDistrictId: integer('pinned_district_id').references(() => planningDistricts.id),
+  pinnedCouncilDistrictId: integer('pinned_council_district_id').references(() => councilDistricts.id),
+  anonymousAuthorName: text('anonymous_author_name'),
 })
 
 // Drizzle relations
@@ -97,14 +131,24 @@ export const usersRelations = relations(users, ({ one, many }) => ({
 export const postsRelations = relations(posts, ({ one, many }) => ({
   user: one(users, { fields: [posts.userId], references: [users.id] }),
   neighborhood: one(neighborhoods, { fields: [posts.neighborhoodId], references: [neighborhoods.id] }),
+  councilDistrict: one(councilDistricts, { fields: [posts.councilDistrictId], references: [councilDistricts.id] }),
+  historicDistrict: one(historicDistricts, { fields: [posts.historicDistrictId], references: [historicDistricts.id] }),
   reactions: many(postReactions),
+}))
+
+export const councilDistrictsRelations = relations(councilDistricts, ({ many }) => ({
+  posts: many(posts),
+}))
+
+export const historicDistrictsRelations = relations(historicDistricts, ({ many }) => ({
+  posts: many(posts),
 }))
 
 export const postReactions = pgTable('post_reactions', {
   id: serial('id').primaryKey(),
   postId: integer('post_id').references(() => posts.id).notNull(),
   userId: integer('user_id').references(() => users.id).notNull(),
-  type: text('type', { enum: ['like', 'second', 'dislike', 'object'] }).notNull(),
+  type: text('type', { enum: ['like', 'second', 'dislike', 'object', 'love_local', 'second_this', 'not_for_me', 'bad_for_community'] }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => [
   unique('post_user_unique').on(table.postId, table.userId)
@@ -113,4 +157,19 @@ export const postReactions = pgTable('post_reactions', {
 export const postReactionsRelations = relations(postReactions, ({ one }) => ({
   post: one(posts, { fields: [postReactions.postId], references: [posts.id] }),
   user: one(users, { fields: [postReactions.userId], references: [users.id] }),
+}))
+
+export const civicVotes = pgTable('civic_votes', {
+  id: serial('id').primaryKey(),
+  postId: integer('post_id').references(() => posts.id).notNull(),
+  userId: integer('user_id').references(() => users.id).notNull(),
+  vote: text('vote', { enum: ['agree', 'object'] }).notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => [
+  unique('civic_vote_user_unique').on(table.postId, table.userId)
+])
+
+export const civicVotesRelations = relations(civicVotes, ({ one }) => ({
+  post: one(posts, { fields: [civicVotes.postId], references: [posts.id] }),
+  user: one(users, { fields: [civicVotes.userId], references: [users.id] }),
 }))

@@ -25,13 +25,17 @@ function createMultiPolygon(lng: number, lat: number, w: number, h: number): any
   }
 }
 
-// Wilmington neighborhoods specifications
+// 42 Neighborhoods specs
 const neighborhoodSpecs = [
   // Northwest District (ID: 1)
   { name: 'Rockford Park', districtId: 1, lng: -75.578, lat: 39.770, w: 0.008, h: 0.006 },
   { name: 'Highlands', districtId: 1, lng: -75.570, lat: 39.766, w: 0.008, h: 0.006 },
   { name: 'Wawaset Park', districtId: 1, lng: -75.575, lat: 39.758, w: 0.008, h: 0.006 },
   { name: 'Delaware Ave', districtId: 1, lng: -75.560, lat: 39.758, w: 0.008, h: 0.006 },
+  { name: 'Kentmere', districtId: 1, lng: -75.580, lat: 39.762, w: 0.006, h: 0.004 },
+  { name: 'Bancroft Parkway', districtId: 1, lng: -75.565, lat: 39.752, w: 0.006, h: 0.004 },
+  { name: 'Stapler Park', districtId: 1, lng: -75.556, lat: 39.752, w: 0.005, h: 0.004 },
+  { name: 'Woodlawn', districtId: 1, lng: -75.572, lat: 39.755, w: 0.006, h: 0.004 },
 
   // West Side District (ID: 2)
   { name: 'Forty Acres', districtId: 2, lng: -75.568, lat: 39.762, w: 0.006, h: 0.004 },
@@ -40,6 +44,10 @@ const neighborhoodSpecs = [
   { name: 'Cool Spring', districtId: 2, lng: -75.562, lat: 39.748, w: 0.008, h: 0.006 },
   { name: 'Trinity Vicinity', districtId: 2, lng: -75.562, lat: 39.742, w: 0.006, h: 0.004 },
   { name: 'West Center City', districtId: 2, lng: -75.556, lat: 39.744, w: 0.006, h: 0.004 },
+  { name: 'Happy Valley', districtId: 2, lng: -75.560, lat: 39.750, w: 0.005, h: 0.004 },
+  { name: 'Canby Park', districtId: 2, lng: -75.580, lat: 39.736, w: 0.008, h: 0.006 },
+  { name: 'Union Park Gardens', districtId: 2, lng: -75.576, lat: 39.741, w: 0.006, h: 0.004 },
+  { name: 'Elsmere Border', districtId: 2, lng: -75.586, lat: 39.743, w: 0.006, h: 0.004 },
 
   // Ninth Ward / North District (ID: 3)
   { name: 'Ninth Ward', districtId: 3, lng: -75.545, lat: 39.768, w: 0.008, h: 0.006 },
@@ -49,6 +57,9 @@ const neighborhoodSpecs = [
   { name: 'Riverside', districtId: 3, lng: -75.525, lat: 39.762, w: 0.008, h: 0.006 },
   { name: 'Eastlake', districtId: 3, lng: -75.532, lat: 39.764, w: 0.006, h: 0.004 },
   { name: 'Prices Run', districtId: 3, lng: -75.538, lat: 39.766, w: 0.006, h: 0.004 },
+  { name: 'Gander Hill', districtId: 3, lng: -75.538, lat: 39.753, w: 0.005, h: 0.004 },
+  { name: 'Vandever Avenue', districtId: 3, lng: -75.533, lat: 39.750, w: 0.006, h: 0.004 },
+  { name: 'Cherry Island', districtId: 3, lng: -75.518, lat: 39.750, w: 0.015, h: 0.012 },
 
   // Downtown / East / South District (ID: 4)
   { name: 'Center City', districtId: 4, lng: -75.548, lat: 39.742, w: 0.008, h: 0.006 },
@@ -60,12 +71,42 @@ const neighborhoodSpecs = [
   { name: 'Southbridge', districtId: 4, lng: -75.542, lat: 39.724, w: 0.012, h: 0.008 },
   { name: 'Browntown', districtId: 4, lng: -75.570, lat: 39.734, w: 0.008, h: 0.006 },
   { name: 'Hedgeville', districtId: 4, lng: -75.568, lat: 39.738, w: 0.006, h: 0.004 },
+  { name: 'Compton Park', districtId: 4, lng: -75.539, lat: 39.738, w: 0.005, h: 0.004 },
+  { name: 'Shipley Run', districtId: 4, lng: -75.560, lat: 39.735, w: 0.006, h: 0.004 },
+  { name: 'Southwest Wilmington', districtId: 4, lng: -75.580, lat: 39.726, w: 0.010, h: 0.008 },
+  { name: 'Delaware Riverfront North', districtId: 4, lng: -75.525, lat: 39.735, w: 0.010, h: 0.008 },
+]
+
+// 8 Council Districts specs
+const councilDistrictSpecs = [
+  { id: 1, name: 'Council District 1', lng: -75.575, lat: 39.770, w: 0.025, h: 0.020 },
+  { id: 2, name: 'Council District 2', lng: -75.545, lat: 39.770, w: 0.025, h: 0.020 },
+  { id: 3, name: 'Council District 3', lng: -75.525, lat: 39.765, w: 0.025, h: 0.018 },
+  { id: 4, name: 'Council District 4', lng: -75.570, lat: 39.750, w: 0.020, h: 0.015 },
+  { id: 5, name: 'Council District 5', lng: -75.548, lat: 39.742, w: 0.018, h: 0.015 },
+  { id: 6, name: 'Council District 6', lng: -75.535, lat: 39.742, w: 0.018, h: 0.015 },
+  { id: 7, name: 'Council District 7', lng: -75.570, lat: 39.730, w: 0.022, h: 0.018 },
+  { id: 8, name: 'Council District 8', lng: -75.545, lat: 39.724, w: 0.022, h: 0.018 },
+]
+
+// 11 Historic Districts specs
+const historicDistrictSpecs = [
+  { id: 1, name: 'Baynard Boulevard', lng: -75.545, lat: 39.760, w: 0.005, h: 0.004 },
+  { id: 2, name: 'Upper Market Street', lng: -75.548, lat: 39.745, w: 0.004, h: 0.003 },
+  { id: 3, name: 'Lower Market Street', lng: -75.549, lat: 39.739, w: 0.004, h: 0.003 },
+  { id: 4, name: 'Cool Spring/Tilton Park', lng: -75.562, lat: 39.748, w: 0.006, h: 0.004 },
+  { id: 5, name: 'Quaker Hill', lng: -75.552, lat: 39.739, w: 0.005, h: 0.004 },
+  { id: 6, name: 'Delaware Avenue', lng: -75.560, lat: 39.758, w: 0.006, h: 0.004 },
+  { id: 7, name: 'Rockford Park', lng: -75.578, lat: 39.770, w: 0.006, h: 0.004 },
+  { id: 8, name: 'Eastside', lng: -75.538, lat: 39.742, w: 0.006, h: 0.004 },
+  { id: 9, name: "St. Mary's", lng: -75.536, lat: 39.745, w: 0.004, h: 0.003 },
+  { id: 10, name: 'Old Swedes', lng: -75.535, lat: 39.736, w: 0.004, h: 0.003 },
+  { id: 11, name: 'Trinity Vicinity', lng: -75.562, lat: 39.742, w: 0.005, h: 0.004 },
 ]
 
 async function main() {
-  console.log('🌱 Starting Wilmington Sounding Board seeding script...')
+  console.log('🌱 Seeding expanded Wilmington geospatial layers and roles...')
 
-  // Step 1: Prepare the JSON Mock Data payload
   const mockDbData: any = {
     states: [{ id: 1, name: 'Delaware', code: 'DE' }],
     cities: [{ id: 1, name: 'Wilmington', stateId: 1 }],
@@ -75,81 +116,90 @@ async function main() {
       { id: 3, name: 'Ninth Ward / North', cityId: 1 },
       { id: 4, name: 'Downtown / East / South', cityId: 1 },
     ],
-    neighborhoods: neighborhoodSpecs.map((spec, index) => {
-      const boundary = createMultiPolygon(spec.lng, spec.lat, spec.w, spec.h)
-      return {
-        id: index + 1,
-        name: spec.name,
-        districtId: spec.districtId,
-        boundary, // Store GeoJSON directly
-      }
-    }),
+    councilDistricts: councilDistrictSpecs.map(spec => ({
+      id: spec.id,
+      name: spec.name,
+      boundary: createMultiPolygon(spec.lng, spec.lat, spec.w, spec.h)
+    })),
+    historicDistricts: historicDistrictSpecs.map(spec => ({
+      id: spec.id,
+      name: spec.name,
+      boundary: createMultiPolygon(spec.lng, spec.lat, spec.w, spec.h)
+    })),
+    neighborhoods: neighborhoodSpecs.map((spec, index) => ({
+      id: index + 1,
+      name: spec.name,
+      districtId: spec.districtId,
+      boundary: createMultiPolygon(spec.lng, spec.lat, spec.w, spec.h),
+    })),
     users: [
-      { id: 1, name: 'Marcus Williams', email: 'marcus@wilm.net', role: 'citizen', address: 'Trolley Square, Wilmington DE', latitude: -75.568, longitude: 39.762, neighborhoodId: 5 }, // Forty Acres
+      { id: 1, name: 'Marcus Williams', email: 'marcus@wilm.net', role: 'citizen', address: 'Trolley Square, Wilmington DE', latitude: -75.568, longitude: 39.762, neighborhoodId: 9 }, // Forty Acres
       { id: 2, name: 'Brew Haha Cafe', email: 'info@brewhaha.com', role: 'business', address: '1700 Delaware Ave, Wilmington, DE', latitude: -75.560, longitude: 39.758, neighborhoodId: 4 }, // Delaware Ave
-      { id: 3, name: 'Constitution Yards', email: 'events@constitutionyards.com', role: 'business', address: '308 Justison St, Wilmington, DE', latitude: -75.556, longitude: 39.732, neighborhoodId: 23 }, // Riverfront
-      { id: 4, name: 'Sarah Thompson', email: 'sarah@dtwilm.org', role: 'citizen', address: 'Market St, Wilmington DE', latitude: -75.548, longitude: 39.742, neighborhoodId: 18 }, // Center City
+      { id: 3, name: 'Wilmington Hope Mission', email: 'mission@wilmhope.org', role: 'nonprofit', address: 'Center City, Wilmington, DE', latitude: -75.548, longitude: 39.742, neighborhoodId: 29 }, // Center City
+      { id: 4, name: 'Council Member Davis', email: 'davis@wilmde.gov', role: 'political', address: 'Wawaset Park, Wilmington DE', latitude: -75.575, longitude: 39.758, neighborhoodId: 3 }, // Wawaset Park
     ],
     posts: [
       {
         id: 1,
-        title: 'Welcome to the Sounding Board!',
-        content: 'Excited to launch this local board. Post updates about local happenings, news, and community notes.',
+        title: 'Welcome to the Fluid Sounding Board!',
+        content: 'Excited to launch our new geospatial platform. Explore notifications within walking distance or check official city limits!',
         type: 'miniblog',
         mediaUrl: '',
         userType: 'citizen',
         userId: 1,
-        neighborhoodId: 5,
-        createdAt: new Date().toISOString()
+        neighborhoodId: 9,
+        createdAt: new Date().toISOString(),
+        isBeacon: false,
+        isPinned: false
       },
       {
         id: 2,
-        title: 'Weekly Trivia Night & Craft Brew Specials',
-        content: 'Join us at Brew Haha Delaware Ave this Thursday at 7 PM for local trivia! 15% off specialty roasted lattes and craft cider imports for neighbors.',
+        title: 'Fresh pasty batch out of the oven! 🥐 (Beacon Drop)',
+        content: 'Get 10% off any freshly baked almond croissant for the next 2 hours! Tap to view directions.',
         type: 'story',
-        mediaUrl: 'https://images.unsplash.com/photo-1511920170033-f8396924c348?w=800&auto=format&fit=crop',
+        mediaUrl: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=800&auto=format&fit=crop',
         userType: 'business',
         userId: 2,
         neighborhoodId: 4,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        isBeacon: true,
+        beaconExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        isPinned: false
       },
       {
         id: 3,
-        title: 'Live Music by the Christina River',
-        content: 'This Friday: Local blues band playing live under the lights starting at 6 PM. Bring the kids, dogs allowed!',
+        title: 'Community Clothing Drive (District 4 Blast)',
+        content: 'We are collecting coats and blankets this Saturday from 9 AM to 1 PM at the mission. Let\'s keep our neighbors warm.',
         type: 'story',
-        mediaUrl: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=800&auto=format&fit=crop',
-        userType: 'business',
+        mediaUrl: '',
+        userType: 'nonprofit',
         userId: 3,
-        neighborhoodId: 23,
-        createdAt: new Date().toISOString()
+        neighborhoodId: 29,
+        createdAt: new Date().toISOString(),
+        isBeacon: false,
+        isPinned: true,
+        pinnedCouncilDistrictId: 4,
+        councilDistrictId: 4
       },
       {
         id: 4,
-        title: 'Beautiful morning jogging at Rockford Park',
-        content: 'Check out the views of the stone tower today. Best place to clear your mind in Wilmington!',
-        type: 'short',
-        mediaUrl: 'https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=800&auto=format&fit=crop',
-        userType: 'citizen',
-        userId: 1,
-        neighborhoodId: 1, // Rockford Park
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: 5,
-        title: 'Cool Spring Farmers Market opening this week',
-        content: 'Support local growers and artisans! Lots of organic vegetables and handmade pastries available.',
+        title: 'Davis City Council Town Hall Meetup (District 1 Blast)',
+        content: 'I\'m hosting an open town hall dialog at Wawaset Park this Thursday at 6 PM. Join us to discuss zoning reforms, traffic controls, and public safety initiatives.',
         type: 'miniblog',
         mediaUrl: '',
-        userType: 'citizen',
+        userType: 'political',
         userId: 4,
-        neighborhoodId: 8, // Cool Spring
-        createdAt: new Date().toISOString()
+        neighborhoodId: 3,
+        createdAt: new Date().toISOString(),
+        isBeacon: false,
+        isPinned: true,
+        pinnedCouncilDistrictId: 1,
+        councilDistrictId: 1
       }
     ]
   }
 
-  // Save the mock database JSON representation
+  // Write local mock database fallback
   const dbDir = path.join(__dirname)
   if (!fs.existsSync(dbDir)) {
     fs.mkdirSync(dbDir, { recursive: true })
@@ -159,11 +209,10 @@ async function main() {
     JSON.stringify(mockDbData, null, 2),
     'utf-8'
   )
-  console.log('✅ Local mock database saved to src/db/mock_db.json.')
+  console.log('✅ Local mock database file written with 42 neighborhoods, 8 council districts, and 11 historic districts.')
 
-  // Step 2: Attempt PostgreSQL Seeding if DATABASE_URL is available and online
+  // Postgres database seeding
   const databaseUrl = process.env.DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/wilmington_sounding_board'
-  
   const pool = new Pool({
     connectionString: databaseUrl,
     connectionTimeoutMillis: 2000,
@@ -171,55 +220,67 @@ async function main() {
 
   try {
     const client = await pool.connect()
-    console.log('🔌 Connected to local PostgreSQL database. Running migrations & schemas...')
-    
-    // Enable postgis extension
-    await client.query('CREATE EXTENSION IF NOT EXISTS postgis;')
-    console.log('✅ PostGIS extension confirmed.')
+    console.log('🔌 Connected to local Postgres pool. Truncating schemas...')
 
-    // Clean existing tables data (truncate data instead of dropping the schema)
-    await client.query('TRUNCATE TABLE post_reactions, posts, users, neighborhoods, planning_districts, cities, states RESTART IDENTITY CASCADE;')
-    console.log('🧹 Cleaned existing tables data.')
+    await client.query('CREATE EXTENSION IF NOT EXISTS postgis;')
+    await client.query('TRUNCATE TABLE post_reactions, posts, users, neighborhoods, planning_districts, council_districts, historic_districts, cities, states RESTART IDENTITY CASCADE;')
+    console.log('🧹 Cleanup complete. Seeding tables...')
 
     const db = drizzle(pool, { schema })
 
-    // Seed States
     await db.insert(schema.states).values(mockDbData.states)
-    // Seed Cities
     await db.insert(schema.cities).values(mockDbData.cities)
-    // Seed Planning Districts
     await db.insert(schema.planningDistricts).values(mockDbData.planningDistricts)
-    
-    // Seed Neighborhoods with ST_GeomFromGeoJSON
+
+    // Seed Council Districts
+    for (const cd of mockDbData.councilDistricts) {
+      await db.execute(sql`
+        INSERT INTO council_districts (id, name, boundary)
+        VALUES (${cd.id}, ${cd.name}, ST_GeomFromGeoJSON(${JSON.stringify(cd.boundary)}))
+      `)
+    }
+    console.log('✅ Seeded 8 Council Districts.')
+
+    // Seed Historic Districts
+    for (const hd of mockDbData.historicDistricts) {
+      await db.execute(sql`
+        INSERT INTO historic_districts (id, name, boundary)
+        VALUES (${hd.id}, ${hd.name}, ST_GeomFromGeoJSON(${JSON.stringify(hd.boundary)}))
+      `)
+    }
+    console.log('✅ Seeded 11 Historic Districts.')
+
+    // Seed Neighborhoods
     for (const nh of mockDbData.neighborhoods) {
       await db.execute(sql`
         INSERT INTO neighborhoods (id, name, district_id, boundary)
         VALUES (${nh.id}, ${nh.name}, ${nh.districtId}, ST_GeomFromGeoJSON(${JSON.stringify(nh.boundary)}))
       `)
     }
-    
-    // Seed Users
-    await db.insert(schema.users).values(mockDbData.users)
-    
-    // Seed Posts (map string dates to Date objects)
-    const postsWithDate = mockDbData.posts.map((post: any) => ({
-      ...post,
-      createdAt: new Date(post.createdAt)
-    }))
-    await db.insert(schema.posts).values(postsWithDate)
+    console.log('✅ Seeded 42 Neighborhoods.')
 
-    console.log('🎉 PostgreSQL Database successfully seeded with Wilmington Planning Districts & Neighborhoods!')
+    // Seed Users & Posts
+    await db.insert(schema.users).values(mockDbData.users)
+
+    const postsWithDates = mockDbData.posts.map((p: any) => ({
+      ...p,
+      createdAt: new Date(p.createdAt),
+      beaconExpiresAt: p.beaconExpiresAt ? new Date(p.beaconExpiresAt) : null
+    }))
+    await db.insert(schema.posts).values(postsWithDates)
+    console.log('✅ Seeded users and posts.')
+
+    console.log('🎉 Postgres successfully seeded with expanded layers.')
     client.release()
   } catch (err) {
-    console.warn('⚠️ Seeding local PostgreSQL failed:')
+    console.warn('⚠️ Postgres pool seeder failed.Fall back to local mock_db.json representation.')
     console.error(err)
-    console.info('💡 The application will run successfully using the generated mock_db.json fallback.')
   } finally {
     await pool.end()
   }
 }
 
-main().catch((e) => {
-  console.error('❌ Seeding execution error:', e)
+main().catch(err => {
+  console.error('❌ Seeder execution exception:', err)
   process.exit(1)
 })

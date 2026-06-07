@@ -9,8 +9,12 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@turf/boolean-point-in-polygon": "^7.3.5",
+    "@types/leaflet": "^1.9.21",
     "@vercel/analytics": "^2.0.1",
     "drizzle-orm": "^0.45.2",
+    "flags": "^4.1.0",
+    "leaflet": "^1.9.4",
     "lucide-react": "^1.17.0",
     "mapbox-gl": "^3.24.0",
     "next": "16.2.7",
