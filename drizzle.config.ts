@@ -7,5 +7,5 @@ export default defineConfig({
   dbCredentials: {
     url: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_Or26QItMyqCw@ep-wandering-salad-aqbj2m4g-pooler.c-8.us-east-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require',
   },
-  tablesFilter: ["states", "cities", "planning_districts", "neighborhoods", "users", "posts", "post_reactions"]
+  tablesFilter: ["states", "cities", "planning_districts", "neighborhoods", "users", "posts", "post_reactions", "beta_feedback"]
 });

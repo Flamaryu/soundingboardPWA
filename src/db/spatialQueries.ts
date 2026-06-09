@@ -4,7 +4,7 @@ import * as schema from './schema'
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
 
 // Haversine formula to compute distance in meters between two points
-function getHaversineDistance(lon1: number, lat1: number, lon2: number, lat2: number): number {
+export function getHaversineDistance(lon1: number, lat1: number, lon2: number, lat2: number): number {
   const R = 6371e3 // Earth radius in meters
   const phi1 = (lat1 * Math.PI) / 180
   const phi2 = (lat2 * Math.PI) / 180
@@ -20,7 +20,7 @@ function getHaversineDistance(lon1: number, lat1: number, lon2: number, lat2: nu
 }
 
 // Get centroid helper for mock database neighborhood boundary coordinates
-function getNeighborhoodCentroid(coordinates: number[][][][]): { lng: number; lat: number } {
+export function getNeighborhoodCentroid(coordinates: number[][][][]): { lng: number; lat: number } {
   let totalLng = 0
   let totalLat = 0
   let count = 0
@@ -42,7 +42,7 @@ import * as path from 'path'
 import mockDbData from './mock_db.json'
 
 let mockDbMemory: any = null
-function readMockDb() {
+export function readMockDb() {
   try {
     const filePath = path.join(process.cwd(), 'src', 'db', 'mock_db.json')
     if (fs.existsSync(filePath)) {
@@ -55,7 +55,7 @@ function readMockDb() {
 }
 
 // Format mock post helper
-function formatMockPost(post: any, mockDb: any, activeUserId: number) {
+export function formatMockPost(post: any, mockDb: any, activeUserId: number) {
   const user = mockDb.users.find((u: any) => u.id === post.userId)
   const nh = mockDb.neighborhoods.find((n: any) => n.id === post.neighborhoodId)
   const reaction = (mockDb.postReactions || []).find(
@@ -104,6 +104,8 @@ export async function fetchWalkingRadiusPosts(
 
     // Filter posts by distance
     const matchedPosts = mockDb.posts.filter((post: any) => {
+      if (post.shadowbanned) return false
+
       const centroid = nhCentroids.get(post.neighborhoodId) || { lng: -75.548, lat: 39.742 }
       const dist = getHaversineDistance(lng, lat, centroid.lng, centroid.lat)
 
@@ -121,7 +123,8 @@ export async function fetchWalkingRadiusPosts(
         return dist <= dynamicRadius
       }
 
-      return dist <= radiusMeters
+      const postRadius = post.radiusMeters ?? 800
+      return dist <= postRadius
     })
 
     return matchedPosts.map((p: any) => formatMockPost(p, mockDb, activeUserId))
@@ -216,11 +219,14 @@ export async function fetchWalkingRadiusPosts(
       .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
       .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
       .where(
-        sql`ST_DWithin(
-          COALESCE(${schema.posts.location}, ST_SetSRID(ST_MakePoint(${schema.users.longitude}, ${schema.users.latitude}), 4326)::geography),
-          ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-          ${radiusMeters}
-        )`
+        and(
+          eq(schema.posts.shadowbanned, false),
+          sql`ST_DWithin(
+            COALESCE(${schema.posts.location}, ST_SetSRID(ST_MakePoint(${schema.users.longitude}, ${schema.users.latitude}), 4326)::geography),
+            ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
+            ${schema.posts.radiusMeters}
+          )`
+        )
       )
       .orderBy(sql`created_at DESC`)
 
@@ -256,6 +262,7 @@ export async function fetchBoundaryPosts(
 
     // Filter posts check if centroid is inside polygon
     const matchedPosts = mockDb.posts.filter((post: any) => {
+      if (post.shadowbanned) return false
       const centroid = nhCentroids.get(post.neighborhoodId) || { lng: -75.548, lat: 39.742 }
       const point = {
         type: 'Feature',
@@ -313,10 +320,13 @@ export async function fetchBoundaryPosts(
       .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
       .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
       .where(
-        sql`ST_Contains(
-          ST_SetSRID(ST_GeomFromGeoJSON(${geojsonStr}), 4326),
-          COALESCE(${schema.posts.location}, ST_SetSRID(ST_MakePoint(${schema.users.longitude}, ${schema.users.latitude}), 4326))::geometry
-        )`
+        and(
+          eq(schema.posts.shadowbanned, false),
+          sql`ST_Contains(
+            ST_SetSRID(ST_GeomFromGeoJSON(${geojsonStr}), 4326),
+            COALESCE(${schema.posts.location}, ST_SetSRID(ST_MakePoint(${schema.users.longitude}, ${schema.users.latitude}), 4326))::geometry
+          )`
+        )
       )
       .orderBy(sql`created_at DESC`)
 
@@ -344,7 +354,7 @@ export async function fetchCouncilDistrictPosts(
     if (!mockDb) return []
 
     // Filter posts by councilDistrictId directly
-    const matchedPosts = mockDb.posts.filter((post: any) => post.councilDistrictId === councilDistrictId)
+    const matchedPosts = mockDb.posts.filter((post: any) => post.councilDistrictId === councilDistrictId && !post.shadowbanned)
     return matchedPosts.map((p: any) => formatMockPost(p, mockDb, activeUserId))
       .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   }
@@ -383,7 +393,12 @@ export async function fetchCouncilDistrictPosts(
       .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
       .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
       .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
-      .where(eq(schema.posts.councilDistrictId, councilDistrictId))
+      .where(
+        and(
+          eq(schema.posts.councilDistrictId, councilDistrictId),
+          eq(schema.posts.shadowbanned, false)
+        )
+      )
       .orderBy(sql`created_at DESC`)
 
     return rows.map((r: any) => ({
@@ -409,7 +424,7 @@ export async function fetchHistoricDistrictPosts(
     const mockDb = readMockDb()
     if (!mockDb) return []
 
-    const matchedPosts = mockDb.posts.filter((post: any) => post.historicDistrictId === historicDistrictId)
+    const matchedPosts = mockDb.posts.filter((post: any) => post.historicDistrictId === historicDistrictId && !post.shadowbanned)
     return matchedPosts.map((p: any) => formatMockPost(p, mockDb, activeUserId))
       .sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
   }
@@ -448,7 +463,12 @@ export async function fetchHistoricDistrictPosts(
       .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
       .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
       .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
-      .where(eq(schema.posts.historicDistrictId, historicDistrictId))
+      .where(
+        and(
+          eq(schema.posts.historicDistrictId, historicDistrictId),
+          eq(schema.posts.shadowbanned, false)
+        )
+      )
       .orderBy(sql`created_at DESC`)
 
     return rows.map((r: any) => ({

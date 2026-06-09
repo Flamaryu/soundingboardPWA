@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { 
@@ -26,6 +26,8 @@ import {
 } from 'lucide-react'
 import { reactToPost, createPost, castCivicVote } from '@/app/actions/posts'
 import { resolveAddress } from '@/app/actions/neighborhood'
+import { usePWAInstall } from '@/hooks/usePWAInstall'
+import QRRedirectDetector from './QRRedirectDetector'
 
 // Dynamically import Leaflet map to avoid server-side rendering issues
 const DynamicLeafletMap = dynamic(() => import('./LeafletMap'), {
@@ -185,6 +187,37 @@ export default function FluidLayoutContainer({
   }
   const [activeUserId, setActiveUserId] = useState(initialUserId)
   const [activeNhId, setActiveNhId] = useState(initialNhId)
+
+  // QR Welcome Banner State
+  const [showQRWelcome, setShowQRWelcome] = useState(false)
+  const [isQrVisitor, setIsQrVisitor] = useState(false)
+
+  // PWA Install Prompt Hook
+  const { isInstallable, isInstalled, isIOS, isSafari, install } = usePWAInstall()
+  const [dismissedInstall, setDismissedInstall] = useState(true)
+  const [dismissedIOS, setDismissedIOS] = useState(true)
+  const [dismissedOpenApp, setDismissedOpenApp] = useState(true)
+
+  // Beta Feedback Form States
+  const [showFeedbackCard, setShowFeedbackCard] = useState(false)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [submittingFeedback, setSubmittingFeedback] = useState(false)
+  const [feedbackSuccess, setFeedbackSuccess] = useState(false)
+  const [feedbackError, setFeedbackError] = useState('')
+
+  // Sync PWA dismissal variables & check QR code landing ref
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setDismissedInstall(sessionStorage.getItem('dismissed-pwa-install') === 'true')
+      setDismissedIOS(sessionStorage.getItem('dismissed-pwa-ios') === 'true')
+      setDismissedOpenApp(sessionStorage.getItem('dismissed-pwa-open') === 'true')
+
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('ref') === 'qr' || params.get('source') === 'sticker') {
+        setShowQRWelcome(true)
+      }
+    }
+  }, [])
   
   const [activeMapLayer, setActiveMapLayer] = useState<'neighborhood' | 'council' | 'historic'>('neighborhood')
   const [activeCouncilDistrictId, setActiveCouncilDistrictId] = useState(1)
@@ -557,7 +590,7 @@ export default function FluidLayoutContainer({
       })
     })
 
-    const res = await reactToPost(postId, activeUserId, reactionType)
+    const res = await reactToPost(postId, activeUserId, reactionType, userLocation?.lat || mapCenter.lat, userLocation?.lng || mapCenter.lng)
     if (res.success) {
       fetchPosts()
     }
@@ -601,7 +634,7 @@ export default function FluidLayoutContainer({
       })
     })
 
-    const res = await castCivicVote(postId, activeUserId, voteType)
+    const res = await castCivicVote(postId, activeUserId, voteType, userLocation?.lat || mapCenter.lat, userLocation?.lng || mapCenter.lng)
     if (res.success) {
       fetchPosts()
     }
@@ -693,6 +726,36 @@ export default function FluidLayoutContainer({
       window.removeEventListener('touchend', handleWindowTouchEnd)
     }
   }, [isDragging])
+
+  // Beta Feedback Submit Handler
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!feedbackText.trim()) return
+    setSubmittingFeedback(true)
+    setFeedbackError('')
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: feedbackText })
+      })
+      if (res.ok) {
+        setFeedbackSuccess(true)
+        setFeedbackText('')
+        setTimeout(() => {
+          setFeedbackSuccess(false)
+          setShowFeedbackCard(false)
+        }, 2500)
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        setFeedbackError(errData.error || 'Could not save feedback. Please try again.')
+      }
+    } catch (err) {
+      setFeedbackError('Network error. Please try again.')
+    } finally {
+      setSubmittingFeedback(false)
+    }
+  }
 
   // Filter posts client-side for search queries and enabled post types
   const filteredPosts = posts.filter(p => {
@@ -1451,6 +1514,211 @@ export default function FluidLayoutContainer({
           </div>
         </div>
       </div>
+
+      <Suspense fallback={null}>
+        <QRRedirectDetector onDetect={setIsQrVisitor} />
+      </Suspense>
+
+      {/* ========================================================================= */}
+      {/* 1. THE "QR LANDING BRIDGE" WELCOME BANNER                                */}
+      {/* ========================================================================= */}
+      {(showQRWelcome || isQrVisitor) && (
+        <div className="fixed top-4 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-xl z-[60] pointer-events-auto bg-[#1c2541]/95 border-2 border-[#00f5d4]/40 backdrop-blur-md px-4 py-3.5 rounded-2xl shadow-2xl flex items-start justify-between gap-3 text-white transition-all animate-fadeIn duration-350">
+          <div className="flex gap-2.5">
+            <span className="text-xl animate-bounce">✨</span>
+            <div>
+              <h4 className="text-xs font-black text-[#00f5d4] uppercase tracking-wider">Wilmington Welcome!</h4>
+              <p className="text-[11px] text-slate-200 font-semibold leading-relaxed mt-1">
+                Welcome Wilmington Local! 302 built, no algorithms. Pick a profile type below to explore, or start posting right away.
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => { setShowQRWelcome(false); setIsQrVisitor(false); }}
+            className="p-1 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            aria-label="Dismiss welcome banner"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. SMART PWA INSTALLATION & "OPEN APP" OVERLAYS                         */}
+      {/* ========================================================================= */}
+      
+      {/* CONDITION A: Standard Browser Installable */}
+      {isInstallable && !isInstalled && !dismissedInstall && (
+        <div className="fixed top-20 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-xl z-55 pointer-events-auto bg-[#1c2541]/95 border border-[#00f5d4]/30 backdrop-blur-md px-4 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 text-white transition-all animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">📲</span>
+            <div>
+              <h4 className="text-[11px] font-black uppercase text-white tracking-wider">Install Sounding Board PWA</h4>
+              <p className="text-[9px] text-slate-300">Get the full local experience on your home screen.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => {
+                sessionStorage.setItem('dismissed-pwa-install', 'true')
+                setDismissedInstall(true)
+              }}
+              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
+            >
+              Later
+            </button>
+            <button 
+              onClick={install}
+              className="px-3.5 py-1.5 bg-[#00f5d4] hover:bg-[#00e1c2] text-[#0b132b] font-black rounded-xl text-[10px] uppercase cursor-pointer shadow-lg shadow-[#00f5d4]/15 hover:scale-105 active:scale-95 transition-all"
+            >
+              Install
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CONDITION B: iOS Safari mobile tooltip helper */}
+      {isIOS && isSafari && !isInstalled && !dismissedIOS && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[90%] max-w-sm z-55 pointer-events-auto bg-[#1c2541]/95 border-2 border-[#d90429]/40 backdrop-blur-md p-3.5 rounded-2xl shadow-2xl flex flex-col gap-2.5 text-white animate-fadeIn">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex gap-2.5">
+              <span className="text-base animate-pulse">📱</span>
+              <div>
+                <h4 className="text-[11px] font-black uppercase text-white tracking-wider">Install Sounding Board</h4>
+                <p className="text-[9px] text-slate-200 mt-1 leading-relaxed">
+                  Install this PWA on your iPhone: tap the <strong className="text-[#00f5d4]">Share icon</strong> in the Safari bottom bar, then select <strong className="text-[#00f5d4]">"Add to Home Screen"</strong>.
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => {
+                sessionStorage.setItem('dismissed-pwa-ios', 'true')
+                setDismissedIOS(true)
+              }}
+              className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full cursor-pointer transition-colors"
+              aria-label="Dismiss tooltip"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {/* Tiny down arrow pointing down to Safari controls */}
+          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-[#1c2541] border-r border-b border-[#d90429]/40 rotate-45" />
+        </div>
+      )}
+
+      {/* CONDITION C: Already installed but opened in a standard browser */}
+      {(() => {
+        const wasInstalled = typeof window !== 'undefined' && localStorage.getItem('pwa-installed') === 'true'
+        if (wasInstalled && !isInstalled && !dismissedOpenApp) {
+          return (
+            <div className="fixed top-20 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-xl z-55 pointer-events-auto bg-[#1c2541]/95 border border-[#d90429]/30 backdrop-blur-md px-4 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 text-white transition-all animate-fadeIn">
+              <div className="flex items-center gap-2.5">
+                <span className="text-lg">⚡</span>
+                <div>
+                  <h4 className="text-[11px] font-black uppercase text-white tracking-wider">Open in Standalone App</h4>
+                  <p className="text-[9px] text-slate-300">Launch the installed Sounding Board app for a native experience.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    sessionStorage.setItem('dismissed-pwa-open', 'true')
+                    setDismissedOpenApp(true)
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
+                >
+                  Later
+                </button>
+                <a 
+                  href="/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    sessionStorage.setItem('dismissed-pwa-open', 'true')
+                    setDismissedOpenApp(true)
+                  }}
+                  className="px-3.5 py-1.5 bg-[#d90429] hover:bg-[#b00320] text-white font-black rounded-xl text-[10px] uppercase cursor-pointer shadow-lg shadow-[#d90429]/15 hover:scale-105 active:scale-95 transition-all text-center"
+                >
+                  Launch App
+                </a>
+              </div>
+            </div>
+          )
+        }
+        return null
+      })()}
+
+      {/* ========================================================================= */}
+      {/* 3. NON-INVASIVE BETA FEEDBACK COMPONENT                                  */}
+      {/* ========================================================================= */}
+      
+      {/* Sticky speech bubble FAB */}
+      {!showFeedbackCard && (
+        <button
+          onClick={() => {
+            setShowFeedbackCard(true)
+            setFeedbackSuccess(false)
+            setFeedbackError('')
+          }}
+          className="fixed bottom-24 right-4 z-45 w-12 h-12 rounded-full bg-[#d90429] hover:bg-[#b00320] border border-[#d90429]/50 shadow-2xl flex items-center justify-center text-white transition-all active:scale-90 hover:scale-105 pointer-events-auto cursor-pointer"
+          aria-label="Submit beta feedback"
+        >
+          <MessageSquare className="w-5 h-5 text-white" />
+        </button>
+      )}
+
+      {/* Lightweight feedback input card */}
+      {showFeedbackCard && (
+        <div className="fixed bottom-24 right-4 z-[70] w-80 bg-[#1c2541]/95 border border-[#d90429]/40 backdrop-blur-md p-4.5 rounded-3xl shadow-2xl animate-fadeIn pointer-events-auto flex flex-col gap-3">
+          <div className="flex justify-between items-center">
+            <h4 className="text-xs font-black text-[#00f5d4] uppercase tracking-wider flex items-center gap-1.5">
+              <span>💬</span> Sounding Feedback
+            </h4>
+            <button 
+              onClick={() => setShowFeedbackCard(false)}
+              className="p-1 rounded-full hover:bg-slate-800/80 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              aria-label="Close feedback card"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          
+          {feedbackSuccess ? (
+            <div className="text-[11px] text-emerald-400 bg-emerald-950/20 border border-emerald-500/10 p-4 rounded-2xl font-bold text-center leading-relaxed">
+              ✨ Sound waves received! Your feedback has been saved directly to Neon Postgres storage.
+            </div>
+          ) : (
+            <form onSubmit={handleFeedbackSubmit} className="flex flex-col gap-3.5">
+              <div className="flex flex-col gap-1">
+                <label className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">What can we improve?</label>
+                <textarea
+                  placeholder="Bug reports, feature requests, local ideas welcome..."
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  rows={3}
+                  maxLength={1000}
+                  className="w-full bg-[#0b132b] border border-slate-700/50 rounded-xl p-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#d90429] resize-none"
+                  required
+                />
+              </div>
+              
+              {feedbackError && (
+                <p className="text-[10px] text-red-400 bg-red-950/20 border border-red-500/10 p-2 rounded-xl font-medium">
+                  ⚠️ {feedbackError}
+                </p>
+              )}
+              
+              <button
+                type="submit"
+                disabled={submittingFeedback || !feedbackText.trim()}
+                className="w-full py-2.5 bg-[#d90429] hover:bg-[#b00320] text-white font-black rounded-xl text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {submittingFeedback ? 'Submitting feedback...' : 'Submit Feedback'}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </div>
   )
 }
