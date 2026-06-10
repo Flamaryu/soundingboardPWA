@@ -22,12 +22,14 @@ import {
   ImageIcon,
   ChevronUp,
   ChevronDown,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react'
 import { reactToPost, createPost, castCivicVote } from '@/app/actions/posts'
 import { resolveAddress } from '@/app/actions/neighborhood'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
 import QRRedirectDetector from './QRRedirectDetector'
+import { getPostOriginNeighborhood } from '@/lib/wilmingtonSpatialMap'
 
 // Dynamically import Leaflet map to avoid server-side rendering issues
 const DynamicLeafletMap = dynamic(() => import('./LeafletMap'), {
@@ -99,6 +101,18 @@ const getBoundaryCentroid = (boundary: any): { lat: number; lng: number } | null
     return { lat: totalLat / count, lng: totalLng / count }
   }
   return null
+}
+
+function getHaversineDistance(lon1: number, lat1: number, lon2: number, lat2: number): number {
+  const R = 6371000 // Radius of Earth in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return R * c // returns distance in meters
 }
 
 interface TruncatedContentProps {
@@ -187,6 +201,7 @@ export default function FluidLayoutContainer({
   }
   const [activeUserId, setActiveUserId] = useState(initialUserId)
   const [activeNhId, setActiveNhId] = useState(initialNhId)
+  const [dbCredentialsMissing, setDbCredentialsMissing] = useState(false)
 
   // QR Welcome Banner State
   const [showQRWelcome, setShowQRWelcome] = useState(false)
@@ -342,6 +357,11 @@ export default function FluidLayoutContainer({
         const lat = userLocation?.lat ?? mapCenter.lat
         const lng = userLocation?.lng ?? mapCenter.lng
         const response = await fetch(`/api/posts?lat=${lat}&lng=${lng}&userId=${activeUserId}`)
+        if (response.status === 503) {
+          setDbCredentialsMissing(true)
+          setLoadingPosts(false)
+          return
+        }
         if (response.ok) {
           const data = await response.json()
           setPosts(data.posts || [])
@@ -369,6 +389,12 @@ export default function FluidLayoutContainer({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
+
+      if (response.status === 503) {
+        setDbCredentialsMissing(true)
+        setLoadingPosts(false)
+        return
+      }
 
       if (response.ok) {
         const data = await response.json()
@@ -655,7 +681,9 @@ export default function FluidLayoutContainer({
           body: JSON.stringify({
             id: postId,
             userId: activeUserId,
-            reactionType
+            reactionType,
+            lat: userLocation?.lat ?? mapCenter.lat,
+            lng: userLocation?.lng ?? mapCenter.lng
           })
         })
         if (res.ok) {
@@ -719,7 +747,9 @@ export default function FluidLayoutContainer({
           body: JSON.stringify({
             id: postId,
             userId: activeUserId,
-            voteType
+            voteType,
+            lat: userLocation?.lat ?? mapCenter.lat,
+            lng: userLocation?.lng ?? mapCenter.lng
           })
         })
         if (res.ok) {
@@ -860,6 +890,49 @@ export default function FluidLayoutContainer({
     if (p.type === 'story' && !flags.enableStories) return false
     if (p.type === 'short' && !flags.enableVideoShorts) return false
     
+    // Proximity/radius filtering: check distance <= radius_meters
+    let postLat = p.latitude
+    let postLng = p.longitude
+    if (typeof postLat !== 'number' || typeof postLng !== 'number') {
+      const resolved = getPostCoordinates(p)
+      postLat = resolved.lat
+      postLng = resolved.lng
+    }
+
+    let userDistance = 0
+    const radius = p.radius_meters ?? p.radiusMeters ?? 300
+
+    if (typeof postLat === 'number' && typeof postLng === 'number') {
+      const refLat = userLocation?.lat ?? mapCenter.lat
+      const refLng = userLocation?.lng ?? mapCenter.lng
+      const dist = getHaversineDistance(refLng, refLat, postLng, postLat)
+      p.distance_meters = dist
+      userDistance = dist
+    }
+
+    // Base Condition for ALL feeds: distance <= post's radius_meters
+    if (userDistance > radius) {
+      return false
+    }
+
+    // Shift Feeds to "Strict Boundary Breaking" Logic in Sandbox mode
+    const isSandbox = process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true'
+    if (isSandbox && typeof postLat === 'number' && typeof postLng === 'number') {
+      const spatialInfo = getPostOriginNeighborhood(postLat, postLng, p.neighborhoodName)
+      
+      if (viewMode === 'district') {
+        // District Feed: Show posts that physically broke out of their origin neighborhood
+        if (radius < spatialInfo.borderDistance) {
+          return false
+        }
+      } else if (viewMode === 'city') {
+        // City Wide Feed: Show posts that physically broke out of their parent district
+        if (radius < spatialInfo.districtBorderDistance) {
+          return false
+        }
+      }
+    }
+    
     if (!flags.enableSearch) return true
     
     const q = searchQuery.toLowerCase()
@@ -872,7 +945,7 @@ export default function FluidLayoutContainer({
   // Format active scope description
   const activeNh = neighborhoods.find(n => n.id === activeNhId)
   const activeScopeTitle = () => {
-    if (viewMode === 'walking') return '🚶‍♂️ Walking Radius (800m)'
+    if (viewMode === 'walking') return '🚶‍♂️ Walking Radius (300m)'
     if (viewMode === 'neighborhood') return `🏡 Neighborhood: ${activeNh ? activeNh.name : 'Unknown'}`
     if (viewMode === 'district') return `🏛️ District: ${activeNh ? activeNh.districtName : 'Unknown'}`
     if (viewMode === 'council') {
@@ -884,6 +957,50 @@ export default function FluidLayoutContainer({
       return `📜 Historic District: ${hd ? hd.name : 'Unknown'}`
     }
     return '🌆 City: Wilmington Wide'
+  }
+
+  if (dbCredentialsMissing) {
+    return (
+      <div className="w-full h-screen bg-[#0b132b] flex items-center justify-center p-4">
+        <div className="bg-[#1c2541]/85 border border-[#d90429]/40 backdrop-blur-lg rounded-3xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center gap-5 animate-fadeIn">
+          <div className="w-16 h-16 rounded-full bg-[#d90429]/10 border border-[#d90429]/30 flex items-center justify-center shadow-lg shadow-[#d90429]/10 animate-pulse">
+            <AlertTriangle className="w-8 h-8 text-[#d90429]" />
+          </div>
+          <div>
+            <span className="bg-[#d90429]/25 text-[#d90429] text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-[#d90429]/20">
+              Database Connection Offline
+            </span>
+            <h2 className="text-lg font-black text-white mt-3 tracking-wide">Credentials Missing</h2>
+            <p className="text-[11px] text-slate-300 leading-relaxed mt-2.5">
+              This preview branch is currently missing the required Upstash Redis database environment variables. Please check your deployment settings.
+            </p>
+          </div>
+          <div className="w-full bg-[#0b132b]/60 border border-slate-700/30 rounded-2xl p-4.5 text-left flex flex-col gap-2">
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">NEXT_PUBLIC_ENABLE_SANDBOX_MODE</span>
+              <span className="text-emerald-400 font-extrabold font-mono">true</span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">UPSTASH_REDIS_REST_URL</span>
+              <span className="text-[#d90429] font-extrabold font-mono">Missing</span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">UPSTASH_REDIS_REST_TOKEN</span>
+              <span className="text-[#d90429] font-extrabold font-mono">Missing</span>
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              setDbCredentialsMissing(false)
+              fetchPosts()
+            }}
+            className="w-full py-3 bg-[#d90429] hover:bg-[#b00320] text-white font-black rounded-xl text-xs transition-all active:scale-95 cursor-pointer shadow-lg shadow-[#d90429]/15"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (

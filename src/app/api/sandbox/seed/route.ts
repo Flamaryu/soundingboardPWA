@@ -3,7 +3,9 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
 
-const redis = Redis.fromEnv()
+const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  ? Redis.fromEnv()
+  : null
 
 // Helper to generate a random citizen name
 function getRandomCitizenName() {
@@ -18,6 +20,9 @@ function addSlightOffset(coord: number) {
 
 export async function POST(request: Request) {
   try {
+    if (!redis) {
+      return NextResponse.json({ success: false, error: 'Database credentials missing for this preview branch' }, { status: 503 })
+    }
     // 4 required templates + 4 highly diverse randomized templates
     const pool = [
       // Post 1 (Center City) - Rodney Square
@@ -142,7 +147,7 @@ export async function POST(request: Request) {
         neighborhoodName: item.neighborhoodName,
         latitude: lat,
         longitude: lng,
-        radius_meters: 800,
+        radius_meters: 300,
         shadowbanned: false,
         hit_city_wall: false,
         userReactions: {},

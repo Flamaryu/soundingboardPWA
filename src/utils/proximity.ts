@@ -6,7 +6,7 @@ export function computeProximity(post: {
   rawObjections?: number;
   createdAt: string | Date;
 }) {
-  const BASE_RADIUS = 800;
+  const BASE_RADIUS = 300;
   const MAX_CITY_RADIUS = 8000;
   
   const walkingLikes = post.likes || 0;
@@ -18,7 +18,7 @@ export function computeProximity(post: {
   const ripples = Math.floor((walkingLikes + civicVotes + debateHeat) / 5);
   const hoursPassed = Math.max(0, Math.floor((Date.now() - new Date(post.createdAt).getTime()) / (3600 * 1000)));
 
-  const interactionScore = (walkingLikes * 200) + (civicVotes * 300) + (debateHeat * 20);
+  const interactionScore = (walkingLikes * 100) + (civicVotes * 150) + (debateHeat * 20);
   const rippleBonus = 1 + (ripples * 0.1);
   const multipliedScore = interactionScore * rippleBonus;
 
@@ -46,3 +46,10 @@ export function computeProximity(post: {
     hitCityWall
   };
 }
+
+export function getInteractionWeight(distance: number): number {
+  if (distance < 500) return 1.0;
+  if (distance <= 2500) return 0.6;
+  return 0.2;
+}
+

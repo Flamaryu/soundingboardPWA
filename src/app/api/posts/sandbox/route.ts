@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
+import { getInteractionWeight } from '@/utils/proximity'
 
 async function getUpstashRedis() {
   const hasUpstashEnv = !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
       neighborhoodName: neighborhoodName || 'Wilmington Sandbox',
       latitude: Number(latitude),
       longitude: Number(longitude),
-      radius_meters: 800,
+      radius_meters: 300,
       shadowbanned: false,
       hit_city_wall: false,
       userReactions: {},
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
-    const { id, walkingLikes, civicVotes, debateHeat, ripples, toxicityFlags, hoursPassed } = body
+    const { id, walkingLikes, civicVotes, debateHeat, ripples, toxicityFlags, hoursPassed, interactionDistance } = body
 
     if (id === undefined) {
       return NextResponse.json({ success: false, error: 'Post ID is required' }, { status: 400 })
@@ -126,12 +127,16 @@ export async function PUT(request: Request) {
     // Simulate decay offset by setting a past createdAt date
     const calculatedCreatedAt = new Date(Date.now() - (hoursPassed * 3600 * 1000)).toISOString()
 
-    const interactionScore = (walkingLikes * 200) + (civicVotes * 300) + (debateHeat * 20)
+    const dist = typeof interactionDistance === 'number' ? interactionDistance : 0
+    const distanceWeightFactor = getInteractionWeight(dist)
+
+    const baseInteractionScore = (walkingLikes * 60) + (civicVotes * 120) + (debateHeat * 10)
+    const attenuatedScore = baseInteractionScore * distanceWeightFactor
     const rippleBonus = 1 + (ripples * 0.1)
-    const multipliedScore = interactionScore * rippleBonus
+    const multipliedScore = attenuatedScore * rippleBonus
     const toxicityMultiplier = 1 + (toxicityFlags * 0.5)
     const totalDecay = hoursPassed * 50 * toxicityMultiplier
-    let finalRadius = 800 + multipliedScore - totalDecay
+    let finalRadius = 300 + multipliedScore - totalDecay
 
     let shadowbanned = false
     let hit_city_wall = false
@@ -140,7 +145,7 @@ export async function PUT(request: Request) {
       finalRadius = 0
       shadowbanned = true
     } else {
-      finalRadius = Math.max(800, finalRadius)
+      finalRadius = Math.max(300, finalRadius)
       if (finalRadius >= 8000) {
         finalRadius = 8000
         hit_city_wall = true

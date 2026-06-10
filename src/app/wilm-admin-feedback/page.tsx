@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useTransition, useRef } from 'react'
+import { useState, useTransition, useRef, useEffect } from 'react'
 import { fetchFeedbackAction, clearSandboxFeedAction } from './actions'
-import { Lock, FileText, Calendar, ArrowLeft, RefreshCw, Trash2, Sprout } from 'lucide-react'
+import { Lock, FileText, Calendar, ArrowLeft, RefreshCw, Trash2, Sprout, AlertTriangle } from 'lucide-react'
 
 export default function AdminFeedbackPage() {
   const [password, setPassword] = useState('')
@@ -10,6 +10,18 @@ export default function AdminFeedbackPage() {
   const [error, setError] = useState('')
   const [isPending, startTransition] = useTransition()
   const [isUnlocked, setIsUnlocked] = useState(false)
+  const [dbCredentialsMissing, setDbCredentialsMissing] = useState(false)
+
+  useEffect(() => {
+    // Check credentials on mount by pinging sandbox
+    fetch('/api/posts/sandbox')
+      .then(res => {
+        if (res.status === 503) {
+          setDbCredentialsMissing(true)
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const handleUnlock = (e: React.FormEvent) => {
     e.preventDefault()
@@ -113,6 +125,50 @@ export default function AdminFeedbackPage() {
     } finally {
       setSeedingSandbox(false)
     }
+  }
+
+  if (dbCredentialsMissing) {
+    return (
+      <main className="min-h-screen bg-[#0b132b] flex items-center justify-center p-4 text-slate-200">
+        <div className="bg-[#1c2541]/85 border border-[#d90429]/40 backdrop-blur-lg rounded-3xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center gap-5 animate-fadeIn">
+          <div className="w-16 h-16 rounded-full bg-[#d90429]/10 border border-[#d90429]/30 flex items-center justify-center shadow-lg shadow-[#d90429]/10 animate-pulse">
+            <AlertTriangle className="w-8 h-8 text-[#d90429]" />
+          </div>
+          <div>
+            <span className="bg-[#d90429]/25 text-[#d90429] text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-[#d90429]/20">
+              Database Connection Offline
+            </span>
+            <h2 className="text-lg font-black text-white mt-3 tracking-wide">Credentials Missing</h2>
+            <p className="text-[11px] text-slate-300 leading-relaxed mt-2.5">
+              This preview branch is currently missing the required Upstash Redis database environment variables. Please check your deployment settings.
+            </p>
+          </div>
+          <div className="w-full bg-[#0b132b]/60 border border-slate-700/30 rounded-2xl p-4.5 text-left flex flex-col gap-2">
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">NEXT_PUBLIC_ENABLE_SANDBOX_MODE</span>
+              <span className="text-emerald-400 font-extrabold font-mono">true</span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">UPSTASH_REDIS_REST_URL</span>
+              <span className="text-[#d90429] font-extrabold font-mono">Missing</span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">UPSTASH_REDIS_REST_TOKEN</span>
+              <span className="text-[#d90429] font-extrabold font-mono">Missing</span>
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              setDbCredentialsMissing(false)
+              window.location.reload()
+            }}
+            className="w-full py-3 bg-[#d90429] hover:bg-[#b00320] text-white font-black rounded-xl text-xs transition-all active:scale-95 cursor-pointer shadow-lg shadow-[#d90429]/15"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </main>
+    )
   }
 
   if (!isUnlocked) {

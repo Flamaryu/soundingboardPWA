@@ -84,7 +84,7 @@ export function formatMockPost(post: any, mockDb: any, activeUserId: number) {
 export async function fetchWalkingRadiusPosts(
   lng: number,
   lat: number,
-  radiusMeters = 800,
+  radiusMeters = 300,
   activeUserId = 1,
   echoTimeDecay = true
 ) {
@@ -118,12 +118,12 @@ export async function fetchWalkingRadiusPosts(
         
         const elapsedHours = (Date.now() - new Date(post.createdAt).getTime()) / (3600 * 1000)
         const decay = elapsedHours * 50
-        const calculatedRadius = 800 + (loveLocalCount * 200) + (secondThisCount * 200) + (civicVotesCount * 300) - decay
-        const dynamicRadius = Math.max(800, calculatedRadius)
+        const calculatedRadius = 300 + (loveLocalCount * 100) + (secondThisCount * 100) + (civicVotesCount * 150) - decay
+        const dynamicRadius = Math.max(300, calculatedRadius)
         return dist <= dynamicRadius
       }
 
-      const postRadius = post.radiusMeters ?? 800
+      const postRadius = post.radiusMeters ?? 300
       return dist <= postRadius
     })
 
@@ -142,11 +142,11 @@ export async function fetchWalkingRadiusPosts(
                r.type as "userReaction",
                cv.vote as "userVote",
                (
-                 SELECT GREATEST(800, 
-                   800 
-                   + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'love_local') * 200
-                   + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'second_this') * 200
-                   + (SELECT COUNT(*) FROM civic_votes cv WHERE cv.post_id = p.id) * 300
+                 SELECT GREATEST(300, 
+                   300 
+                   + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'love_local') * 100
+                   + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'second_this') * 100
+                   + (SELECT COUNT(*) FROM civic_votes cv WHERE cv.post_id = p.id) * 150
                    - (EXTRACT(EPOCH FROM (NOW() - p.created_at)) / 3600 * 50)
                  )
                ) AS max_reach_meters
@@ -158,11 +158,11 @@ export async function fetchWalkingRadiusPosts(
         WHERE ST_DWithin(
           COALESCE(p.location, ST_SetSRID(ST_MakePoint(u.longitude, u.latitude), 4326)::geography),
           ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography,
-          GREATEST(800, 
-            800 
-            + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'love_local') * 200
-            + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'second_this') * 200
-            + (SELECT COUNT(*) FROM civic_votes cv WHERE cv.post_id = p.id) * 300
+          GREATEST(300, 
+            300 
+            + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'love_local') * 100
+            + (SELECT COUNT(*) FROM post_reactions pr WHERE pr.post_id = p.id AND pr.type = 'second_this') * 100
+            + (SELECT COUNT(*) FROM civic_votes cv WHERE cv.post_id = p.id) * 150
             - (EXTRACT(EPOCH FROM (NOW() - p.created_at)) / 3600 * 50)
           )
         )

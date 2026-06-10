@@ -12,7 +12,9 @@ import { getFeedPosts } from '@/app/actions/posts'
 import { Redis } from '@upstash/redis'
 
 // Initialize the Upstash Redis client
-const redis = Redis.fromEnv()
+const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  ? Redis.fromEnv()
+  : null
 
 async function fetchPostsWithFilters(params: any) {
   const { 
@@ -32,7 +34,7 @@ async function fetchPostsWithFilters(params: any) {
 
   // 1. Walking Mode (Fluid 0.5-mile circle)
   if (viewMode === 'walking') {
-    return await fetchWalkingRadiusPosts(lng || -75.548, lat || 39.742, 800, activeUserId, echoTimeDecay)
+    return await fetchWalkingRadiusPosts(lng || -75.548, lat || 39.742, 300, activeUserId, echoTimeDecay)
   }
 
   // 2. Council District Mode (Blasts)
@@ -73,6 +75,9 @@ export async function POST(request: Request) {
 
     // 1. Check if Sandbox Mode is enabled
     if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      if (!redis) {
+        return NextResponse.json({ success: false, error: 'Database credentials missing for this preview branch' }, { status: 503 })
+      }
       const { content, latitude, longitude } = body
       if (!content || !content.trim()) {
         return NextResponse.json({ success: false, error: 'Content is required' }, { status: 400 })
@@ -101,7 +106,7 @@ export async function POST(request: Request) {
         ripples: 0,
         toxicityFlags: 0,
         hoursPassed: 0,
-        radius_meters: 800,
+        radius_meters: 300,
         shadowbanned: false,
         hit_city_wall: false,
         createdAt,
@@ -130,6 +135,9 @@ export async function GET(request: Request) {
 
     // 1. Check if Sandbox Mode is enabled
     if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      if (!redis) {
+        return NextResponse.json({ success: false, error: 'Database credentials missing for this preview branch' }, { status: 503 })
+      }
       const latStr = searchParams.get('lat')
       const lngStr = searchParams.get('lng')
       const userIdStr = searchParams.get('userId') || '1'
@@ -161,25 +169,18 @@ export async function GET(request: Request) {
         // Note: getHaversineDistance takes: lon1, lat1, lon2, lat2
         const distance = getHaversineDistance(readerLng, readerLat, p.longitude, p.latitude)
         p.distance_meters = distance
-        return distance <= (p.radius_meters ?? 800)
+        return distance <= (p.radius_meters ?? 300)
       }).map((p: any) => {
         // Map dynamic decay on read
         const hoursPassed = Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / (3600 * 1000)))
 
-        // Recalculate dynamic proximity on read
         const walkingLikes = p.walkingLikes || 0
         const civicVotes = p.civicVotes || 0
         const debateHeat = p.debateHeat || 0
-        const ripples = p.ripples || 0
         const toxicityFlags = p.toxicityFlags || 0
 
-        const interactionScore = (walkingLikes * 200) + (civicVotes * 300) + (debateHeat * 20)
-        const rippleBonus = 1 + (ripples * 0.1)
-        const multipliedScore = interactionScore * rippleBonus
-        const toxicityMultiplier = 1 + (toxicityFlags * 0.5)
-        const totalDecay = hoursPassed * 50 * toxicityMultiplier
-        let finalRadius = 800 + multipliedScore - totalDecay
-
+        // Use strictly the stored radius_meters without read-time per-like coefficients
+        let finalRadius = p.radius_meters ?? 300
         let shadowbanned = p.shadowbanned
         let hit_city_wall = false
 
@@ -187,19 +188,17 @@ export async function GET(request: Request) {
           finalRadius = 0
           shadowbanned = true
         } else {
-          finalRadius = Math.max(800, finalRadius)
+          finalRadius = Math.max(300, finalRadius)
           if (finalRadius >= 8000) {
             finalRadius = 8000
             hit_city_wall = true
           }
         }
 
-        const mappedRadius = Math.round(finalRadius)
-
         return {
           ...p,
           hoursPassed,
-          radius_meters: mappedRadius,
+          radius_meters: Math.round(finalRadius),
           shadowbanned,
           hit_city_wall,
           likes: walkingLikes,

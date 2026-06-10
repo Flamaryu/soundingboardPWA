@@ -37,6 +37,7 @@ interface SandboxPost {
   shadowbanned: boolean
   hit_city_wall: boolean
   userName: string
+  interactionDistance?: number
 }
 
 const LOCATION_PRESETS = [
@@ -48,6 +49,7 @@ const LOCATION_PRESETS = [
 
 export default function DevToolsPage() {
   const [activeTab, setActiveTab] = useState<'simulator' | 'echo'>('simulator')
+  const [dbCredentialsMissing, setDbCredentialsMissing] = useState(false)
   
   // Tab 1: Local / Bound Simulator States
   const [walkingLikes, setWalkingLikes] = useState(0)
@@ -79,13 +81,15 @@ export default function DevToolsPage() {
   const [isPending, startTransition] = useTransition()
 
   // Proximity Algorithm Math Constants
-  const BASE_RADIUS = 800
+  const BASE_RADIUS = 300
   const MAX_CITY_RADIUS = 8000
 
   // Calculate proximity values for UI locally
-  const interactionScore = (walkingLikes * 200) + (civicVotes * 300) + (debateHeat * 20)
+  const distanceWeightFactor = interactionDistance < 500 ? 1.0 : (interactionDistance <= 2500 ? 0.6 : 0.2)
+  const baseInteractionScore = (walkingLikes * 60) + (civicVotes * 120) + (debateHeat * 10)
+  const attenuatedScore = baseInteractionScore * distanceWeightFactor
   const rippleBonus = 1 + (ripples * 0.1)
-  const multipliedScore = interactionScore * rippleBonus
+  const multipliedScore = attenuatedScore * rippleBonus
 
   const toxicityMultiplier = 1 + (toxicityFlags * 0.5)
   const totalDecay = hoursPassed * 50 * toxicityMultiplier
@@ -116,6 +120,11 @@ export default function DevToolsPage() {
     setLoadingStream(true)
     try {
       const res = await fetch('/api/posts/sandbox')
+      if (res.status === 503) {
+        setDbCredentialsMissing(true)
+        setLoadingStream(false)
+        return
+      }
       if (res.ok) {
         const data = await res.json()
         setSandboxPosts(data.posts || [])
@@ -148,6 +157,7 @@ export default function DevToolsPage() {
       setRipples(activeSelectedPost.ripples || 0)
       setToxicityFlags(activeSelectedPost.toxicityFlags || 0)
       setHoursPassed(activeSelectedPost.hoursPassed || 0)
+      setInteractionDistance(activeSelectedPost.interactionDistance || 0)
     }
   }, [activeSelectedPost?.id])
 
@@ -171,6 +181,7 @@ export default function DevToolsPage() {
       ripples: updates.hasOwnProperty('ripples') ? Number(updates.ripples) : ripples,
       toxicityFlags: updates.hasOwnProperty('toxicityFlags') ? Number(updates.toxicityFlags) : toxicityFlags,
       hoursPassed: updates.hasOwnProperty('hoursPassed') ? Number(updates.hoursPassed) : hoursPassed,
+      interactionDistance: updates.hasOwnProperty('interactionDistance') ? Number(updates.interactionDistance) : interactionDistance,
       ...updates
     }
 
@@ -384,6 +395,50 @@ export default function DevToolsPage() {
         setEchoError(err.message || 'Network error occurred testing echo route.')
       }
     })
+  }
+
+  if (dbCredentialsMissing) {
+    return (
+      <main className="min-h-screen bg-[#0b132b] flex items-center justify-center p-4 text-slate-200">
+        <div className="bg-[#1c2541]/85 border border-[#d90429]/40 backdrop-blur-lg rounded-3xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center gap-5 animate-fadeIn">
+          <div className="w-16 h-16 rounded-full bg-[#d90429]/10 border border-[#d90429]/30 flex items-center justify-center shadow-lg shadow-[#d90429]/10 animate-pulse">
+            <AlertTriangle className="w-8 h-8 text-[#d90429]" />
+          </div>
+          <div>
+            <span className="bg-[#d90429]/25 text-[#d90429] text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-[#d90429]/20">
+              Database Connection Offline
+            </span>
+            <h2 className="text-lg font-black text-white mt-3 tracking-wide">Credentials Missing</h2>
+            <p className="text-[11px] text-slate-300 leading-relaxed mt-2.5">
+              This preview branch is currently missing the required Upstash Redis database environment variables. Please check your deployment settings.
+            </p>
+          </div>
+          <div className="w-full bg-[#0b132b]/60 border border-slate-700/30 rounded-2xl p-4.5 text-left flex flex-col gap-2">
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">NEXT_PUBLIC_ENABLE_SANDBOX_MODE</span>
+              <span className="text-emerald-400 font-extrabold font-mono">true</span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">UPSTASH_REDIS_REST_URL</span>
+              <span className="text-[#d90429] font-extrabold font-mono">Missing</span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">UPSTASH_REDIS_REST_TOKEN</span>
+              <span className="text-[#d90429] font-extrabold font-mono">Missing</span>
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              setDbCredentialsMissing(false)
+              fetchSandboxPosts()
+            }}
+            className="w-full py-3 bg-[#d90429] hover:bg-[#b00320] text-white font-black rounded-xl text-xs transition-all active:scale-95 cursor-pointer shadow-lg shadow-[#d90429]/15"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -673,7 +728,7 @@ export default function DevToolsPage() {
                       <span className="text-white font-bold font-mono">
                         {interactionDistance}m
                         <span className="text-[#00f5d4] ml-2 bg-[#00f5d4]/10 border border-[#00f5d4]/20 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                          Scale Weight: {(scale * 100).toFixed(0)}%
+                          Attenuation: {(distanceWeightFactor * 100).toFixed(0)}%
                         </span>
                       </span>
                     </div>
@@ -683,11 +738,11 @@ export default function DevToolsPage() {
                       max="8000"
                       step="50"
                       value={interactionDistance}
-                      onChange={(e) => setInteractionDistance(Number(e.target.value))}
+                      onChange={(e) => handleSliderChange(Number(e.target.value), setInteractionDistance, 'interactionDistance')}
                       className="w-full accent-[#00f5d4] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
                     />
                     <span className="text-[10px] text-slate-500">
-                      Simulated distance between the viewer and post coordinates. Evaluates boundary visibility limits.
+                      Simulated distance between the viewer and post epicenter. Scales interaction weights based on tiers.
                     </span>
                   </div>
 
@@ -696,7 +751,7 @@ export default function DevToolsPage() {
                     <div className="flex justify-between text-xs">
                       <span className="font-bold text-slate-300">Walking Likes</span>
                       <span className="text-[#00f5d4] font-bold font-mono">
-                        {walkingLikes} <span className="text-slate-500 font-normal">(Weight score: +{Math.round(walkingLikes * 200)}m)</span>
+                        {walkingLikes} <span className="text-slate-500 font-normal">(Weight score: +{Math.round(walkingLikes * 60)}m)</span>
                       </span>
                     </div>
                     <input
@@ -707,7 +762,7 @@ export default function DevToolsPage() {
                       onChange={(e) => handleSliderChange(Number(e.target.value), setWalkingLikes, 'walkingLikes')}
                       className="w-full accent-[#00f5d4] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
                     />
-                    <span className="text-[10px] text-slate-500">Weight: +200m per interaction. Represents immediate local foot traffic engagement.</span>
+                    <span className="text-[10px] text-slate-500">Weight: +60m per interaction. Represents immediate local foot traffic engagement.</span>
                   </div>
 
                   {/* civicVotes Slider */}
@@ -715,7 +770,7 @@ export default function DevToolsPage() {
                     <div className="flex justify-between text-xs">
                       <span className="font-bold text-slate-300">Civic Votes</span>
                       <span className="text-[#00f5d4] font-bold font-mono">
-                        {civicVotes} <span className="text-slate-500 font-normal">(Weight score: +{Math.round(civicVotes * 300)}m)</span>
+                        {civicVotes} <span className="text-slate-500 font-normal">(Weight score: +{Math.round(civicVotes * 120)}m)</span>
                       </span>
                     </div>
                     <input
@@ -726,7 +781,7 @@ export default function DevToolsPage() {
                       onChange={(e) => handleSliderChange(Number(e.target.value), setCivicVotes, 'civicVotes')}
                       className="w-full accent-[#00f5d4] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
                     />
-                    <span className="text-[10px] text-slate-500">Weight: +300m per interaction. Represents civic proposal backing / seconds.</span>
+                    <span className="text-[10px] text-slate-500">Weight: +120m per interaction. Represents civic proposal backing / seconds.</span>
                   </div>
 
                   {/* debateHeat Slider */}
@@ -734,7 +789,7 @@ export default function DevToolsPage() {
                     <div className="flex justify-between text-xs">
                       <span className="font-bold text-slate-300">Debate Heat (Dislikes)</span>
                       <span className="text-[#00f5d4] font-bold font-mono">
-                        {debateHeat} <span className="text-slate-500 font-normal">(Weight score: +{Math.round(debateHeat * 20)}m)</span>
+                        {debateHeat} <span className="text-slate-500 font-normal">(Weight score: +{Math.round(debateHeat * 10)}m)</span>
                       </span>
                     </div>
                     <input
@@ -745,7 +800,7 @@ export default function DevToolsPage() {
                       onChange={(e) => handleSliderChange(Number(e.target.value), setDebateHeat, 'debateHeat')}
                       className="w-full accent-[#00f5d4] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
                     />
-                    <span className="text-[10px] text-slate-500">Weight: +20m per interaction. Represents debate activity & comments.</span>
+                    <span className="text-[10px] text-slate-500">Weight: +10m per interaction. Represents debate activity & comments.</span>
                   </div>
 
                   {/* ripples Slider */}
@@ -868,8 +923,16 @@ export default function DevToolsPage() {
                         <span>{BASE_RADIUS}m</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Interaction:</span>
-                        <span>+{Math.round(interactionScore)}m</span>
+                        <span>Base Interaction:</span>
+                        <span>+{Math.round(baseInteractionScore)}m</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Attenuation Factor:</span>
+                        <span>x{distanceWeightFactor.toFixed(1)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Attenuated Reach:</span>
+                        <span>+{Math.round(attenuatedScore)}m</span>
                       </div>
                       <div className="flex justify-between">
                         <span>Multiplier (Bonus):</span>

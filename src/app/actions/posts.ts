@@ -150,7 +150,7 @@ async function calculateInteractionWeight(
   // 3. Distance check and tier weights mapping
   if (typeof actLat === 'number' && typeof actLng === 'number') {
     const distance = getHaversineDistance(actLng, actLat, postLng, postLat)
-    if (distance < 800) {
+    if (distance < 500) {
       return 1.0
     } else if (distance <= 2500) {
       return 0.6
@@ -642,7 +642,7 @@ export async function createPost(data: {
       seconds: 0,
       dislikes: 0,
       objections: 0,
-      radiusMeters: 800,
+      radiusMeters: 300,
       shadowbanned: false,
       hitCityWall: false,
       councilDistrictId: data.councilDistrictId || null,
@@ -711,7 +711,7 @@ export async function createPost(data: {
         seconds: 0,
         dislikes: 0,
         objections: 0,
-        radiusMeters: 800,
+        radiusMeters: 300,
         shadowbanned: false,
         hitCityWall: false,
         councilDistrictId: data.councilDistrictId || null,
@@ -764,7 +764,7 @@ export async function createPost(data: {
       seconds: 0,
       dislikes: 0,
       objections: 0,
-      radiusMeters: 800,
+      radiusMeters: 300,
       shadowbanned: false,
       hitCityWall: false,
       councilDistrictId: data.councilDistrictId || null,
