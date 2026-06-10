@@ -21,20 +21,21 @@ import {
 } from 'lucide-react'
 
 interface SandboxPost {
-  id: number
+  id: string
   title: string
   content: string
   neighborhoodName: string
   latitude: number
   longitude: number
-  likes: number
-  seconds: number
-  dislikes: number
-  objections: number
+  walkingLikes: number
+  civicVotes: number
+  debateHeat: number
+  ripples: number
+  toxicityFlags: number
   hoursPassed: number
-  radiusMeters: number
+  radius_meters: number
   shadowbanned: boolean
-  hitCityWall: boolean
+  hit_city_wall: boolean
   userName: string
 }
 
@@ -52,6 +53,7 @@ export default function DevToolsPage() {
   const [walkingLikes, setWalkingLikes] = useState(0)
   const [civicVotes, setCivicVotes] = useState(0)
   const [debateHeat, setDebateHeat] = useState(0)
+  const [ripples, setRipples] = useState(0)
   const [toxicityFlags, setToxicityFlags] = useState(0)
   const [hoursPassed, setHoursPassed] = useState(0)
   const [interactionDistance, setInteractionDistance] = useState(0)
@@ -66,6 +68,9 @@ export default function DevToolsPage() {
   const [loadingStream, setLoadingStream] = useState(false)
   const [activeSelectedPost, setActiveSelectedPost] = useState<SandboxPost | null>(null)
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle')
+  const [isClearing, setIsClearing] = useState(false)
+  const [clearStatus, setClearStatus] = useState<string | null>(null)
+  const [confirmClear, setConfirmClear] = useState(false)
 
   // Tab 2: Echo Tester States
   const [payloadText, setPayloadText] = useState('{\n  "test": "sounding board payload",\n  "status": "active"\n}')
@@ -77,27 +82,12 @@ export default function DevToolsPage() {
   const BASE_RADIUS = 800
   const MAX_CITY_RADIUS = 8000
 
-  // 3-tier weighting based on simulated distance
-  let simulatedWeight = 1.0
-  if (interactionDistance < 800) {
-    simulatedWeight = 1.0
-  } else if (interactionDistance <= 2500) {
-    simulatedWeight = 0.6
-  } else {
-    simulatedWeight = 0.2
-  }
-
-  const weightedLikes = walkingLikes * simulatedWeight
-  const weightedVotes = civicVotes * simulatedWeight
-  const weightedHeat = debateHeat * simulatedWeight
-  const weightedToxicity = toxicityFlags * simulatedWeight
-
-  const ripples = Math.floor((weightedLikes + weightedVotes + weightedHeat) / 5)
-  const interactionScore = (weightedLikes * 200) + (weightedVotes * 300) + (weightedHeat * 20)
+  // Calculate proximity values for UI locally
+  const interactionScore = (walkingLikes * 200) + (civicVotes * 300) + (debateHeat * 20)
   const rippleBonus = 1 + (ripples * 0.1)
   const multipliedScore = interactionScore * rippleBonus
 
-  const toxicityMultiplier = 1 + (weightedToxicity * 0.5)
+  const toxicityMultiplier = 1 + (toxicityFlags * 0.5)
   const totalDecay = hoursPassed * 50 * toxicityMultiplier
 
   let radiusMeters = BASE_RADIUS + multipliedScore - totalDecay
@@ -118,6 +108,9 @@ export default function DevToolsPage() {
   const roundedRadius = Math.round(radiusMeters)
   const scale = Math.max(0.1, roundedRadius / 4000)
 
+  // Boundary Crossover Test: checks if viewer at interactionDistance sees post
+  const isInsideBoundary = !shadowbanned && interactionDistance <= roundedRadius
+
   // Fetch sandbox stream list
   const fetchSandboxPosts = async () => {
     setLoadingStream(true)
@@ -129,7 +122,7 @@ export default function DevToolsPage() {
         
         // Sync active post back with latest list if selected
         if (activeSelectedPost) {
-          const fresh = (data.posts || []).find((p: SandboxPost) => p.id === activeSelectedPost.id)
+          const fresh = (data.posts || []).find((p: SandboxPost) => String(p.id) === String(activeSelectedPost.id))
           if (fresh) {
             setActiveSelectedPost(fresh)
           }
@@ -149,16 +142,18 @@ export default function DevToolsPage() {
   // Bind activeSelectedPost values to sliders on selection
   useEffect(() => {
     if (activeSelectedPost) {
-      setWalkingLikes(activeSelectedPost.likes || 0)
-      setCivicVotes(activeSelectedPost.seconds || 0)
-      setDebateHeat(activeSelectedPost.dislikes || 0)
-      setToxicityFlags(activeSelectedPost.objections || 0)
+      setWalkingLikes(activeSelectedPost.walkingLikes || 0)
+      setCivicVotes(activeSelectedPost.civicVotes || 0)
+      setDebateHeat(activeSelectedPost.debateHeat || 0)
+      setRipples(activeSelectedPost.ripples || 0)
+      setToxicityFlags(activeSelectedPost.toxicityFlags || 0)
       setHoursPassed(activeSelectedPost.hoursPassed || 0)
     }
   }, [activeSelectedPost?.id])
 
   // Sync Timer for Sliders
   const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const confirmClearTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const queueUpdateToRedis = (updates: Partial<SandboxPost>) => {
     if (!activeSelectedPost) return
@@ -170,11 +165,12 @@ export default function DevToolsPage() {
 
     const payload = {
       id: activeSelectedPost.id,
-      likes: walkingLikes,
-      seconds: civicVotes,
-      dislikes: debateHeat,
-      objections: toxicityFlags,
-      hoursPassed,
+      walkingLikes: updates.hasOwnProperty('walkingLikes') ? Number(updates.walkingLikes) : walkingLikes,
+      civicVotes: updates.hasOwnProperty('civicVotes') ? Number(updates.civicVotes) : civicVotes,
+      debateHeat: updates.hasOwnProperty('debateHeat') ? Number(updates.debateHeat) : debateHeat,
+      ripples: updates.hasOwnProperty('ripples') ? Number(updates.ripples) : ripples,
+      toxicityFlags: updates.hasOwnProperty('toxicityFlags') ? Number(updates.toxicityFlags) : toxicityFlags,
+      hoursPassed: updates.hasOwnProperty('hoursPassed') ? Number(updates.hoursPassed) : hoursPassed,
       ...updates
     }
 
@@ -191,7 +187,7 @@ export default function DevToolsPage() {
           // Update local post state
           if (data.post) {
             setActiveSelectedPost(data.post)
-            setSandboxPosts(prev => prev.map(p => p.id === data.post.id ? data.post : p))
+            setSandboxPosts(prev => prev.map(p => String(p.id) === String(data.post.id) ? data.post : p))
           }
         } else {
           setSyncStatus('error')
@@ -252,7 +248,7 @@ export default function DevToolsPage() {
   }
 
   // Delete post
-  const handleDeletePost = async (id: number, e: React.MouseEvent) => {
+  const handleDeletePost = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     try {
       const res = await fetch(`/api/posts/sandbox?id=${id}`, { method: 'DELETE' })
@@ -270,16 +266,46 @@ export default function DevToolsPage() {
 
   // Clear Sandbox
   const handleClearSandbox = async () => {
-    if (!confirm('Are you sure you want to delete all posts in the sandbox feed?')) return
+    if (!confirmClear) {
+      setConfirmClear(true)
+      if (confirmClearTimeoutRef.current) {
+        clearTimeout(confirmClearTimeoutRef.current)
+      }
+      confirmClearTimeoutRef.current = setTimeout(() => {
+        setConfirmClear(false)
+      }, 4000)
+      return
+    }
+
+    if (confirmClearTimeoutRef.current) {
+      clearTimeout(confirmClearTimeoutRef.current)
+      confirmClearTimeoutRef.current = null
+    }
+    setConfirmClear(false)
+    setIsClearing(true)
+    setClearStatus(null)
+
     try {
       const res = await fetch('/api/posts/sandbox', { method: 'DELETE' })
-      if (res.ok) {
+      if (!res.ok) {
+        throw new Error(`Failed to clear: HTTP error ${res.status}`)
+      }
+      const data = await res.json()
+      if (data.success) {
+        setSandboxPosts([])
         setActiveSelectedPost(null)
         handleResetLocal()
-        fetchSandboxPosts()
+        setClearStatus('✅ Success: Upstash Sandbox Feed Wiped Clean!')
+        setTimeout(() => setClearStatus(null), 5000)
+      } else {
+        throw new Error(data.error || 'Failed to clear feed')
       }
-    } catch (e) {
-      console.error('Failed to clear sandbox')
+    } catch (e: any) {
+      console.error('Failed to clear sandbox:', e)
+      setClearStatus('❌ Failed to clear feed')
+      setTimeout(() => setClearStatus(null), 5000)
+    } finally {
+      setIsClearing(false)
     }
   }
 
@@ -287,6 +313,7 @@ export default function DevToolsPage() {
     setWalkingLikes(0)
     setCivicVotes(0)
     setDebateHeat(0)
+    setRipples(0)
     setToxicityFlags(0)
     setHoursPassed(0)
     setInteractionDistance(0)
@@ -295,17 +322,17 @@ export default function DevToolsPage() {
   const handleResetSimulator = () => {
     handleResetLocal()
     if (activeSelectedPost) {
-      // Sync reset to database
       setSyncStatus('syncing')
       fetch('/api/posts/sandbox', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: activeSelectedPost.id,
-          likes: 0,
-          seconds: 0,
-          dislikes: 0,
-          objections: 0,
+          walkingLikes: 0,
+          civicVotes: 0,
+          debateHeat: 0,
+          ripples: 0,
+          toxicityFlags: 0,
           hoursPassed: 0
         })
       }).then(async res => {
@@ -314,7 +341,7 @@ export default function DevToolsPage() {
           setSyncStatus('synced')
           if (data.post) {
             setActiveSelectedPost(data.post)
-            setSandboxPosts(prev => prev.map(p => p.id === data.post.id ? data.post : p))
+            setSandboxPosts(prev => prev.map(p => String(p.id) === String(data.post.id) ? data.post : p))
           }
         } else {
           setSyncStatus('error')
@@ -477,14 +504,30 @@ export default function DevToolsPage() {
                     <Terminal className="w-4 h-4 text-[#00f5d4]" /> Active Sandbox Stream
                   </h2>
                   
-                  {sandboxPosts.length > 0 && (
-                    <button 
-                      onClick={handleClearSandbox}
-                      className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase transition-colors px-2 py-1 rounded bg-red-950/20 border border-red-500/10 cursor-pointer"
-                    >
-                      Clear All
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {clearStatus && (
+                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg border ${
+                        clearStatus.includes('Success') 
+                          ? 'bg-emerald-950/25 border-emerald-500/20 text-emerald-400' 
+                          : 'bg-red-950/25 border-red-500/20 text-red-400'
+                      }`}>
+                        {clearStatus}
+                      </span>
+                    )}
+                    {sandboxPosts.length > 0 && (
+                      <button 
+                        onClick={handleClearSandbox}
+                        disabled={isClearing}
+                        className={`text-[9px] font-bold uppercase transition-colors px-2 py-1 rounded cursor-pointer disabled:opacity-50 ${
+                          confirmClear 
+                            ? 'bg-red-600 text-white border border-red-600 animate-pulse' 
+                            : 'text-red-400 hover:text-red-300 bg-red-950/20 border border-red-500/10'
+                        }`}
+                      >
+                        {isClearing ? 'Clearing...' : confirmClear ? 'Click again to confirm wipe' : 'Clear All'}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {loadingStream && sandboxPosts.length === 0 ? (
@@ -534,15 +577,14 @@ export default function DevToolsPage() {
                             </span>
                             <span className="text-slate-500">|</span>
                             <span className="text-slate-400">
-                              Radius: <span className="text-[#00f5d4] font-bold">{post.radiusMeters}m</span>
+                              Radius: <span className="text-[#00f5d4] font-bold">{post.radius_meters || 800}m</span>
                             </span>
                             
-                            {/* Small badges inside list item */}
                             {post.shadowbanned ? (
                               <span className="bg-[#d90429]/15 text-[#d90429] border border-[#d90429]/20 px-1.5 py-0.2 rounded text-[8px] font-bold uppercase tracking-wide">
                                 Shadowbanned
                               </span>
-                            ) : post.hitCityWall ? (
+                            ) : post.hit_city_wall ? (
                               <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-1.5 py-0.2 rounded text-[8px] font-bold uppercase tracking-wide">
                                 City Wall
                               </span>
@@ -631,21 +673,21 @@ export default function DevToolsPage() {
                       <span className="text-white font-bold font-mono">
                         {interactionDistance}m
                         <span className="text-[#00f5d4] ml-2 bg-[#00f5d4]/10 border border-[#00f5d4]/20 px-1.5 py-0.5 rounded text-[10px] font-bold">
-                          Weight: {(simulatedWeight * 100).toFixed(0)}%
+                          Scale Weight: {(scale * 100).toFixed(0)}%
                         </span>
                       </span>
                     </div>
                     <input
                       type="range"
                       min="0"
-                      max="5000"
+                      max="8000"
                       step="50"
                       value={interactionDistance}
                       onChange={(e) => setInteractionDistance(Number(e.target.value))}
                       className="w-full accent-[#00f5d4] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
                     />
                     <span className="text-[10px] text-slate-500">
-                      Distance between the responder and post epicenter. Scales interaction: &lt;800m = 100%, 800m-2500m = 60%, &gt;2500m = 20%.
+                      Simulated distance between the viewer and post coordinates. Evaluates boundary visibility limits.
                     </span>
                   </div>
 
@@ -654,7 +696,7 @@ export default function DevToolsPage() {
                     <div className="flex justify-between text-xs">
                       <span className="font-bold text-slate-300">Walking Likes</span>
                       <span className="text-[#00f5d4] font-bold font-mono">
-                        {walkingLikes} <span className="text-slate-500 font-normal">(Weighted: {weightedLikes.toFixed(1)} / +{Math.round(weightedLikes * 200)}m)</span>
+                        {walkingLikes} <span className="text-slate-500 font-normal">(Weight score: +{Math.round(walkingLikes * 200)}m)</span>
                       </span>
                     </div>
                     <input
@@ -662,7 +704,7 @@ export default function DevToolsPage() {
                       min="0"
                       max="50"
                       value={walkingLikes}
-                      onChange={(e) => handleSliderChange(Number(e.target.value), setWalkingLikes, 'likes')}
+                      onChange={(e) => handleSliderChange(Number(e.target.value), setWalkingLikes, 'walkingLikes')}
                       className="w-full accent-[#00f5d4] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
                     />
                     <span className="text-[10px] text-slate-500">Weight: +200m per interaction. Represents immediate local foot traffic engagement.</span>
@@ -673,7 +715,7 @@ export default function DevToolsPage() {
                     <div className="flex justify-between text-xs">
                       <span className="font-bold text-slate-300">Civic Votes</span>
                       <span className="text-[#00f5d4] font-bold font-mono">
-                        {civicVotes} <span className="text-slate-500 font-normal">(Weighted: {weightedVotes.toFixed(1)} / +{Math.round(weightedVotes * 300)}m)</span>
+                        {civicVotes} <span className="text-slate-500 font-normal">(Weight score: +{Math.round(civicVotes * 300)}m)</span>
                       </span>
                     </div>
                     <input
@@ -681,7 +723,7 @@ export default function DevToolsPage() {
                       min="0"
                       max="50"
                       value={civicVotes}
-                      onChange={(e) => handleSliderChange(Number(e.target.value), setCivicVotes, 'seconds')}
+                      onChange={(e) => handleSliderChange(Number(e.target.value), setCivicVotes, 'civicVotes')}
                       className="w-full accent-[#00f5d4] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
                     />
                     <span className="text-[10px] text-slate-500">Weight: +300m per interaction. Represents civic proposal backing / seconds.</span>
@@ -692,7 +734,7 @@ export default function DevToolsPage() {
                     <div className="flex justify-between text-xs">
                       <span className="font-bold text-slate-300">Debate Heat (Dislikes)</span>
                       <span className="text-[#00f5d4] font-bold font-mono">
-                        {debateHeat} <span className="text-slate-500 font-normal">(Weighted: {weightedHeat.toFixed(1)} / +{Math.round(weightedHeat * 20)}m)</span>
+                        {debateHeat} <span className="text-slate-500 font-normal">(Weight score: +{Math.round(debateHeat * 20)}m)</span>
                       </span>
                     </div>
                     <input
@@ -700,22 +742,29 @@ export default function DevToolsPage() {
                       min="0"
                       max="50"
                       value={debateHeat}
-                      onChange={(e) => handleSliderChange(Number(e.target.value), setDebateHeat, 'dislikes')}
+                      onChange={(e) => handleSliderChange(Number(e.target.value), setDebateHeat, 'debateHeat')}
                       className="w-full accent-[#00f5d4] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
                     />
-                    <span className="text-[10px] text-slate-500">Weight: +20m per interaction. Represents debate activity & controversy comments.</span>
+                    <span className="text-[10px] text-slate-500">Weight: +20m per interaction. Represents debate activity & comments.</span>
                   </div>
 
-                  {/* ripples Info */}
-                  <div className="bg-[#0b132b]/50 border border-slate-800 p-3 rounded-xl flex items-center justify-between text-xs">
-                    <div>
-                      <span className="font-bold text-slate-300 block">Viral Ripples Velocity</span>
-                      <span className="text-[10px] text-slate-500">Formula: Math.floor((WeightedLikes + WeightedVotes + WeightedHeat) / 5)</span>
+                  {/* ripples Slider */}
+                  <div className="flex flex-col gap-1.5">
+                    <div className="flex justify-between text-xs">
+                      <span className="font-bold text-slate-300">External ripples (Shares)</span>
+                      <span className="text-[#00f5d4] font-bold font-mono">
+                        {ripples} <span className="text-slate-500 font-normal">(Bonus multiplier: +{(ripples * 10).toFixed(0)}%)</span>
+                      </span>
                     </div>
-                    <div className="text-right">
-                      <span className="text-[#00f5d4] font-black text-sm font-mono block">{ripples}</span>
-                      <span className="text-[10px] text-[#00f5d4]/80 font-bold font-mono">Ripple Bonus: x{rippleBonus.toFixed(1)}</span>
-                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="50"
+                      value={ripples}
+                      onChange={(e) => handleSliderChange(Number(e.target.value), setRipples, 'ripples')}
+                      className="w-full accent-[#00f5d4] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
+                    />
+                    <span className="text-[10px] text-slate-500">Formula: multipliedScore = interactionScore * (1 + ripples * 0.1). Scales reach.</span>
                   </div>
 
                   {/* toxicityFlags Slider */}
@@ -725,7 +774,7 @@ export default function DevToolsPage() {
                         Toxicity Flags <span className="text-[9px] text-[#d90429] bg-[#d90429]/10 border border-[#d90429]/20 px-1.5 py-0.5 rounded font-mono font-bold">objections</span>
                       </span>
                       <span className="text-[#d90429] font-bold font-mono">
-                        {toxicityFlags} <span className="text-slate-500 font-normal">(Weighted: {weightedToxicity.toFixed(1)} / x{toxicityMultiplier.toFixed(1)} decay)</span>
+                        {toxicityFlags} <span className="text-slate-500 font-normal">(Toxicity Multiplier: {toxicityMultiplier.toFixed(1)}x)</span>
                       </span>
                     </div>
                     <input
@@ -733,10 +782,10 @@ export default function DevToolsPage() {
                       min="0"
                       max="20"
                       value={toxicityFlags}
-                      onChange={(e) => handleSliderChange(Number(e.target.value), setToxicityFlags, 'objections')}
+                      onChange={(e) => handleSliderChange(Number(e.target.value), setToxicityFlags, 'toxicityFlags')}
                       className="w-full accent-[#d90429] h-1 bg-[#0b132b] rounded-lg cursor-pointer appearance-none"
                     />
-                    <span className="text-[10px] text-slate-500">Multiplier: 1 + (WeightedFlags * 0.5) to decay. 10+ raw objections triggers shadowban.</span>
+                    <span className="text-[10px] text-slate-500">Multiplier: 1 + (toxicityFlags * 0.5) to decay. 10+ flags triggers shadowban.</span>
                   </div>
 
                   {/* hoursPassed Slider */}
@@ -792,32 +841,54 @@ export default function DevToolsPage() {
                     </div>
                   </div>
 
-                  {/* Math Breakdown */}
-                  <div className="bg-[#0b132b]/50 border border-slate-800/80 p-3 rounded-xl text-[9px] font-mono text-slate-400 flex flex-col gap-1.2">
-                    <div className="flex justify-between">
-                      <span>Base Floor:</span>
-                      <span>{BASE_RADIUS}m</span>
+                  {/* Crossover Test Results & Calculations */}
+                  <div className="flex flex-col gap-2 font-mono text-[9px] text-slate-400">
+                    
+                    <div className="flex justify-between items-center bg-[#0b132b]/50 border border-slate-800/80 p-2.5 rounded-xl">
+                      <div>
+                        <span className="font-bold text-slate-300 block">Boundary Crossover Test</span>
+                        <span className="text-[8px] text-slate-500">Viewer at {interactionDistance}m</span>
+                      </div>
+                      <div>
+                        {isInsideBoundary ? (
+                          <span className="text-[8px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-black tracking-wide uppercase px-2 py-0.5 rounded">
+                            Visible (Passed)
+                          </span>
+                        ) : (
+                          <span className="text-[8px] bg-red-500/20 text-red-400 border border-red-500/30 font-black tracking-wide uppercase px-2 py-0.5 rounded">
+                            Out of Range (Failed)
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex justify-between text-slate-500">
-                      <span>Weight:</span>
-                      <span>{(simulatedWeight * 100).toFixed(0)}%</span>
+
+                    <div className="bg-[#0b132b]/40 border border-slate-800/60 p-2.5 rounded-xl flex flex-col gap-1">
+                      <div className="flex justify-between">
+                        <span>Base Floor:</span>
+                        <span>{BASE_RADIUS}m</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Interaction:</span>
+                        <span>+{Math.round(interactionScore)}m</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Multiplier (Bonus):</span>
+                        <span>x{rippleBonus.toFixed(1)}</span>
+                      </div>
+                      <div className="flex justify-between border-b border-slate-800 pb-1">
+                        <span>Multiplied Reach:</span>
+                        <span>+{Math.round(multipliedScore)}m</span>
+                      </div>
+                      <div className="flex justify-between pt-1">
+                        <span>Decay:</span>
+                        <span className="text-red-400">-{Math.round(totalDecay)}m</span>
+                      </div>
+                      <div className="flex justify-between border-t border-slate-800 pt-1 font-bold text-white">
+                        <span>Result:</span>
+                        <span className={shadowbanned ? 'text-red-400' : 'text-[#00f5d4]'}>{roundedRadius}m</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Weighted Score:</span>
-                      <span>+{Math.round(interactionScore)}m</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 font-bold border-b border-slate-800 pb-1">
-                      <span>Multiplied Score:</span>
-                      <span>+{Math.round(multipliedScore)}m</span>
-                    </div>
-                    <div className="flex justify-between pt-1">
-                      <span>Decay:</span>
-                      <span className="text-red-400">-{Math.round(totalDecay)}m</span>
-                    </div>
-                    <div className="flex justify-between border-t border-slate-800 pt-1 font-bold text-white text-xs">
-                      <span>Result:</span>
-                      <span className={shadowbanned ? 'text-red-400' : 'text-[#00f5d4]'}>{roundedRadius}m</span>
-                    </div>
+
                   </div>
                 </div>
 

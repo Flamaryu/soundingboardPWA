@@ -1,8 +1,8 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useRef } from 'react'
 import { fetchFeedbackAction, clearSandboxFeedAction } from './actions'
-import { Lock, FileText, Calendar, ArrowLeft, RefreshCw, Trash2 } from 'lucide-react'
+import { Lock, FileText, Calendar, ArrowLeft, RefreshCw, Trash2, Sprout } from 'lucide-react'
 
 export default function AdminFeedbackPage() {
   const [password, setPassword] = useState('')
@@ -42,21 +42,76 @@ export default function AdminFeedbackPage() {
   const [sandboxMsg, setSandboxMsg] = useState('')
   const [sandboxError, setSandboxError] = useState('')
   const [clearingSandbox, setClearingSandbox] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
+  const confirmClearTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
   const handleClearSandbox = async () => {
-    if (!confirm('Are you sure you want to completely clear the Vercel KV Sandbox Feed? This cannot be undone.')) return
+    if (!confirmClear) {
+      setConfirmClear(true)
+      if (confirmClearTimeoutRef.current) {
+        clearTimeout(confirmClearTimeoutRef.current)
+      }
+      confirmClearTimeoutRef.current = setTimeout(() => {
+        setConfirmClear(false)
+      }, 4000)
+      return
+    }
+
+    if (confirmClearTimeoutRef.current) {
+      clearTimeout(confirmClearTimeoutRef.current)
+      confirmClearTimeoutRef.current = null
+    }
+    setConfirmClear(false)
     setClearingSandbox(true)
     setSandboxMsg('')
     setSandboxError('')
     try {
-      await clearSandboxFeedAction(password)
-      setSandboxMsg('Sandbox feed successfully cleared from Vercel KV!')
-      setTimeout(() => setSandboxMsg(''), 5000)
+      const res = await fetch('/api/posts/sandbox', { method: 'DELETE' })
+      if (!res.ok) {
+        throw new Error(`Failed to clear feed: HTTP error ${res.status}`)
+      }
+      const data = await res.json()
+      if (data.success) {
+        setSandboxMsg('✅ Success: Upstash Sandbox Feed Wiped Clean!')
+        setFeedbacks([])
+        setTimeout(() => setSandboxMsg(''), 5000)
+      } else {
+        throw new Error(data.error || 'Failed to clear feed')
+      }
     } catch (err: any) {
-      setSandboxError(err?.message || 'Failed to clear sandbox feed. Check Vercel KV connection settings.')
+      console.error('Error clearing sandbox feed:', err)
+      setSandboxError('❌ Failed to clear feed')
       setTimeout(() => setSandboxError(''), 5000)
     } finally {
       setClearingSandbox(false)
+    }
+  }
+
+  // Sandbox seed states
+  const [seedingSandbox, setSeedingSandbox] = useState(false)
+
+  const handleSeedSandbox = async () => {
+    setSeedingSandbox(true)
+    setSandboxMsg('')
+    setSandboxError('')
+    try {
+      const res = await fetch('/api/sandbox/seed', { method: 'POST' })
+      if (!res.ok) {
+        throw new Error(`Failed to seed feed: HTTP error ${res.status}`)
+      }
+      const data = await res.json()
+      if (data.success) {
+        setSandboxMsg(data.message || 'Sandbox feed successfully seeded with mock posts!')
+        setTimeout(() => setSandboxMsg(''), 5000)
+      } else {
+        throw new Error(data.error || 'Failed to seed sandbox feed.')
+      }
+    } catch (err: any) {
+      console.error('Error seeding sandbox feed:', err)
+      setSandboxError(err?.message || 'Failed to seed sandbox feed.')
+      setTimeout(() => setSandboxError(''), 5000)
+    } finally {
+      setSeedingSandbox(false)
     }
   }
 
@@ -132,10 +187,22 @@ export default function AdminFeedbackPage() {
             <button
               onClick={handleClearSandbox}
               disabled={clearingSandbox}
-              className="px-3 py-1.5 bg-amber-600/20 hover:bg-amber-600/35 text-amber-400 border border-amber-500/20 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 ${
+                confirmClear 
+                  ? 'bg-red-600 text-white border border-red-600 animate-pulse' 
+                  : 'bg-amber-600/20 hover:bg-amber-600/35 text-amber-400 border border-amber-500/20'
+              }`}
             >
               <Trash2 className="w-3.5 h-3.5" />
-              {clearingSandbox ? 'Clearing...' : 'Clear Sandbox'}
+              {clearingSandbox ? 'Clearing...' : confirmClear ? 'Click again to confirm wipe' : 'Clear Sandbox'}
+            </button>
+            <button
+              onClick={handleSeedSandbox}
+              disabled={seedingSandbox}
+              className="px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/35 text-emerald-400 border border-emerald-500/20 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+            >
+              <Sprout className="w-3.5 h-3.5" />
+              {seedingSandbox ? 'Seeding...' : 'Seed Sandbox Feed'}
             </button>
             <button
               onClick={() => {

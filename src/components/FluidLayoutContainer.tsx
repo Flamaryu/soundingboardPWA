@@ -338,6 +338,18 @@ export default function FluidLayoutContainer({
   const fetchPosts = async () => {
     setLoadingPosts(true)
     try {
+      if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+        const lat = userLocation?.lat ?? mapCenter.lat
+        const lng = userLocation?.lng ?? mapCenter.lng
+        const response = await fetch(`/api/posts?lat=${lat}&lng=${lng}&userId=${activeUserId}`)
+        if (response.ok) {
+          const data = await response.json()
+          setPosts(data.posts || [])
+        }
+        setLoadingPosts(false)
+        return
+      }
+
       const activeNh = neighborhoods.find(n => n.id === activeNhId)
       
       const payload = {
@@ -460,12 +472,57 @@ export default function FluidLayoutContainer({
     e.preventDefault()
     setFormError('')
 
-    if (!title.trim() || !content.trim()) {
-      setFormError('Please fill in both title and content fields.')
+    if (!content.trim()) {
+      setFormError('Please write some content.')
       return
     }
 
     startTransition(async () => {
+      if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+        try {
+          const lat = userLocation?.lat ?? mapCenter.lat
+          const lng = userLocation?.lng ?? mapCenter.lng
+          
+          const response = await fetch('/api/posts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: content.trim(),
+              latitude: lat,
+              longitude: lng
+            })
+          })
+
+          if (response.ok) {
+            const res = await response.json()
+            if (res.success) {
+              setTitle('')
+              setContent('')
+              setMediaUrl('')
+              setIsProposal(false)
+              setBlastToCouncil(false)
+              setIsBeacon(false)
+              setIsPinned(false)
+              setIsAnonymous(false)
+              setShowCreateForm(false)
+              fetchPosts()
+            } else {
+              setFormError(res.error || 'Failed to publish post.')
+            }
+          } else {
+            setFormError('Failed to publish post.')
+          }
+        } catch (err) {
+          setFormError('Failed to publish post due to a network error.')
+        }
+        return
+      }
+
+      if (!title.trim()) {
+        setFormError('Please write a headline.')
+        return
+      }
+
       const res = await createPost({
         title,
         content,
@@ -531,13 +588,13 @@ export default function FluidLayoutContainer({
 
   // React to post
   const handleReact = async (
-    postId: number, 
+    postId: number | string, 
     reactionType: 'like' | 'second' | 'dislike' | 'object' | 'love_local' | 'second_this' | 'not_for_me' | 'bad_for_community'
   ) => {
     // Optimistically update reactions locally for instant response
     setPosts(prevPosts => {
       return prevPosts.map(post => {
-        if (post.id !== postId) return post
+        if (String(post.id) !== String(postId)) return post
         
         let likes = post.likes || 0
         let seconds = post.seconds || 0
@@ -590,18 +647,38 @@ export default function FluidLayoutContainer({
       })
     })
 
-    const res = await reactToPost(postId, activeUserId, reactionType, userLocation?.lat || mapCenter.lat, userLocation?.lng || mapCenter.lng)
+    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      try {
+        const res = await fetch('/api/posts/interact', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: postId,
+            userId: activeUserId,
+            reactionType
+          })
+        })
+        if (res.ok) {
+          fetchPosts()
+        }
+      } catch (err) {
+        console.error('Failed to react in sandbox:', err)
+      }
+      return
+    }
+
+    const res = await reactToPost(Number(postId), activeUserId, reactionType, userLocation?.lat || mapCenter.lat, userLocation?.lng || mapCenter.lng)
     if (res.success) {
       fetchPosts()
     }
   }
 
   // Cast civic vote
-  const handleCivicVote = async (postId: number, voteType: 'agree' | 'object') => {
+  const handleCivicVote = async (postId: number | string, voteType: 'agree' | 'object') => {
     // Optimistically update votes locally
     setPosts(prevPosts => {
       return prevPosts.map(post => {
-        if (post.id !== postId) return post
+        if (String(post.id) !== String(postId)) return post
         
         let seconds = post.seconds || 0
         let objections = post.objections || 0
@@ -634,7 +711,27 @@ export default function FluidLayoutContainer({
       })
     })
 
-    const res = await castCivicVote(postId, activeUserId, voteType, userLocation?.lat || mapCenter.lat, userLocation?.lng || mapCenter.lng)
+    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      try {
+        const res = await fetch('/api/posts/interact', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: postId,
+            userId: activeUserId,
+            voteType
+          })
+        })
+        if (res.ok) {
+          fetchPosts()
+        }
+      } catch (err) {
+        console.error('Failed to vote in sandbox:', err)
+      }
+      return
+    }
+
+    const res = await castCivicVote(Number(postId), activeUserId, voteType, userLocation?.lat || mapCenter.lat, userLocation?.lng || mapCenter.lng)
     if (res.success) {
       fetchPosts()
     }
@@ -766,7 +863,10 @@ export default function FluidLayoutContainer({
     if (!flags.enableSearch) return true
     
     const q = searchQuery.toLowerCase()
-    return p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q)
+    return (
+      (p.title?.toLowerCase() || '').includes(q) || 
+      (p.content?.toLowerCase() || '').includes(q)
+    )
   })
 
   // Format active scope description

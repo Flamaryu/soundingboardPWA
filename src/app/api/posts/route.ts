@@ -9,6 +9,10 @@ import {
   readMockDb
 } from '@/db/spatialQueries'
 import { getFeedPosts } from '@/app/actions/posts'
+import { Redis } from '@upstash/redis'
+
+// Initialize the Upstash Redis client
+const redis = Redis.fromEnv()
 
 async function fetchPostsWithFilters(params: any) {
   const { 
@@ -22,54 +26,6 @@ async function fetchPostsWithFilters(params: any) {
     historicDistrictId,
     echoTimeDecay
   } = params
-
-  // Sandbox Mode Toggle Interception
-  const isSandbox = process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true'
-  if (isSandbox) {
-    try {
-      const { Redis } = await import('@upstash/redis')
-      const hasUpstashEnv = !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN
-      if (hasUpstashEnv) {
-        const redis = Redis.fromEnv()
-        const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
-        const posts = rawPosts.map((p: any) => {
-          if (typeof p === 'string') return JSON.parse(p)
-          return p
-        })
-
-        // Filter out shadowbanned posts first
-        let filteredPosts = posts.filter((p: any) => {
-          const isSb = p.shadowbanned === true || (p.objections && p.objections >= 10)
-          return !isSb
-        })
-
-        // In Sandbox mode, if viewer coordinates are provided, filter by Haversine distance
-        if (typeof lat === 'number' && typeof lng === 'number') {
-          const mockDb = readMockDb()
-          const nhCentroids = new Map<number, { lng: number; lat: number }>()
-          mockDb.neighborhoods.forEach((nh: any) => {
-            if (nh.boundary && nh.boundary.coordinates) {
-              nhCentroids.set(nh.id, getNeighborhoodCentroid(nh.boundary.coordinates))
-            }
-          })
-
-          filteredPosts = filteredPosts.filter((p: any) => {
-            const postLat = typeof p.latitude === 'number' ? p.latitude : (nhCentroids.get(p.neighborhoodId) || { lat: 39.742 }).lat
-            const postLng = typeof p.longitude === 'number' ? p.longitude : (nhCentroids.get(p.neighborhoodId) || { lng: -75.548 }).lng
-            const dist = getHaversineDistance(lng, lat, postLng, postLat)
-            const radius = p.radiusMeters ?? 800
-            return dist <= radius
-          })
-        }
-
-        return filteredPosts
-      } else {
-        console.warn('⚠️ Upstash Redis environment variables not set. Falling back to default feed.')
-      }
-    } catch (err: any) {
-      console.error('Failed to fetch from Upstash Redis, falling back to standard feed:', err)
-    }
-  }
 
   const activeUserId = userId ? Number(userId) : 1
   const activeNhId = neighborhoodId ? Number(neighborhoodId) : 5
@@ -114,6 +70,52 @@ async function fetchPostsWithFilters(params: any) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
+
+    // 1. Check if Sandbox Mode is enabled
+    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      const { content, latitude, longitude } = body
+      if (!content || !content.trim()) {
+        return NextResponse.json({ success: false, error: 'Content is required' }, { status: 400 })
+      }
+
+      const postLat = typeof latitude === 'number' ? latitude : parseFloat(latitude)
+      const postLng = typeof longitude === 'number' ? longitude : parseFloat(longitude)
+
+      if (isNaN(postLat) || isNaN(postLng)) {
+        return NextResponse.json({ success: false, error: 'Valid latitude and longitude are required' }, { status: 400 })
+      }
+
+      const randNum = Math.floor(Math.random() * 9000) + 1000
+      const anonymousAuthorName = `citizen${randNum}`
+      const id = 'sandbox_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36)
+      const createdAt = new Date().toISOString()
+
+      const newPost = {
+        id,
+        content: content.trim(),
+        latitude: postLat,
+        longitude: postLng,
+        walkingLikes: 0,
+        civicVotes: 0,
+        debateHeat: 0,
+        ripples: 0,
+        toxicityFlags: 0,
+        hoursPassed: 0,
+        radius_meters: 800,
+        shadowbanned: false,
+        hit_city_wall: false,
+        createdAt,
+        userName: anonymousAuthorName,
+        userRole: 'citizen',
+        userReactions: {},
+        userVotes: {}
+      }
+
+      await redis.lpush('sandbox:posts', JSON.stringify(newPost))
+      return NextResponse.json({ success: true, post: newPost })
+    }
+
+    // 2. Standard mode: fetch posts
     const posts = await fetchPostsWithFilters(body)
     return NextResponse.json({ success: true, posts })
   } catch (err: any) {
@@ -125,6 +127,96 @@ export async function POST(request: Request) {
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
+
+    // 1. Check if Sandbox Mode is enabled
+    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      const latStr = searchParams.get('lat')
+      const lngStr = searchParams.get('lng')
+      const userIdStr = searchParams.get('userId') || '1'
+
+      if (!latStr || !lngStr) {
+        return NextResponse.json({ success: false, error: 'Latitude and Longitude parameters are required' }, { status: 400 })
+      }
+
+      const readerLat = parseFloat(latStr)
+      const readerLng = parseFloat(lngStr)
+
+      if (isNaN(readerLat) || isNaN(readerLng)) {
+        return NextResponse.json({ success: false, error: 'Valid latitude and longitude are required' }, { status: 400 })
+      }
+
+      const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
+      const posts = rawPosts.map((item: any) => {
+        try {
+          if (typeof item === 'object' && item !== null) return item
+          return typeof item === 'string' ? JSON.parse(item) : item
+        } catch (e) {
+          console.error("Malformed sandbox post skipped:", item)
+          return null
+        }
+      }).filter(Boolean)
+
+      const filteredPosts = posts.filter((p: any) => {
+        if (p.shadowbanned === true) return false
+        // Note: getHaversineDistance takes: lon1, lat1, lon2, lat2
+        const distance = getHaversineDistance(readerLng, readerLat, p.longitude, p.latitude)
+        p.distance_meters = distance
+        return distance <= (p.radius_meters ?? 800)
+      }).map((p: any) => {
+        // Map dynamic decay on read
+        const hoursPassed = Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / (3600 * 1000)))
+
+        // Recalculate dynamic proximity on read
+        const walkingLikes = p.walkingLikes || 0
+        const civicVotes = p.civicVotes || 0
+        const debateHeat = p.debateHeat || 0
+        const ripples = p.ripples || 0
+        const toxicityFlags = p.toxicityFlags || 0
+
+        const interactionScore = (walkingLikes * 200) + (civicVotes * 300) + (debateHeat * 20)
+        const rippleBonus = 1 + (ripples * 0.1)
+        const multipliedScore = interactionScore * rippleBonus
+        const toxicityMultiplier = 1 + (toxicityFlags * 0.5)
+        const totalDecay = hoursPassed * 50 * toxicityMultiplier
+        let finalRadius = 800 + multipliedScore - totalDecay
+
+        let shadowbanned = p.shadowbanned
+        let hit_city_wall = false
+
+        if (toxicityFlags >= 10) {
+          finalRadius = 0
+          shadowbanned = true
+        } else {
+          finalRadius = Math.max(800, finalRadius)
+          if (finalRadius >= 8000) {
+            finalRadius = 8000
+            hit_city_wall = true
+          }
+        }
+
+        const mappedRadius = Math.round(finalRadius)
+
+        return {
+          ...p,
+          hoursPassed,
+          radius_meters: mappedRadius,
+          shadowbanned,
+          hit_city_wall,
+          likes: walkingLikes,
+          seconds: civicVotes,
+          dislikes: debateHeat,
+          objections: toxicityFlags,
+          userReaction: p.userReactions?.[userIdStr] || null,
+          userVote: p.userVotes?.[userIdStr] || null,
+          userName: p.userName || 'Anonymous Citizen',
+          userRole: p.userRole || 'citizen'
+        }
+      })
+
+      return NextResponse.json({ success: true, posts: filteredPosts })
+    }
+
+    // 2. Standard mode: fetch posts
     const viewMode = searchParams.get('viewMode') || 'city'
     const lng = searchParams.get('lng') ? Number(searchParams.get('lng')) : null
     const lat = searchParams.get('lat') ? Number(searchParams.get('lat')) : null

@@ -1,8 +1,9 @@
+export const dynamic = 'force-dynamic'
+
 import { NextResponse } from 'next/server'
-import { computeProximity } from '@/utils/proximity'
+import { Redis } from '@upstash/redis'
 
 async function getUpstashRedis() {
-  const { Redis } = await import('@upstash/redis')
   const hasUpstashEnv = !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN
   if (hasUpstashEnv) {
     return Redis.fromEnv()
@@ -17,7 +18,15 @@ export async function GET() {
       return NextResponse.json({ success: true, posts: [] })
     }
     const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
-    const posts = rawPosts.map((p: any) => typeof p === 'string' ? JSON.parse(p) : p)
+    const posts = rawPosts.map((item: any) => {
+      try {
+        if (typeof item === 'object' && item !== null) return item
+        return typeof item === 'string' ? JSON.parse(item) : item
+      } catch (e) {
+        console.error("Malformed sandbox post skipped:", item)
+        return null
+      }
+    }).filter(Boolean)
     return NextResponse.json({ success: true, posts })
   } catch (err: any) {
     console.error('Error in GET /api/posts/sandbox:', err)
@@ -41,16 +50,8 @@ export async function POST(request: Request) {
 
     const randNum = Math.floor(Math.random() * 9000) + 1000
     const anonymousAuthorName = `citizen${randNum}`
-    const id = Math.floor(Math.random() * 1000000)
+    const id = 'sandbox_' + Math.floor(Math.random() * 1000000)
     const createdAt = new Date().toISOString()
-
-    const proximity = computeProximity({
-      likes: 0,
-      seconds: 0,
-      dislikes: 0,
-      objections: 0,
-      createdAt
-    })
 
     const newPost = {
       id,
@@ -60,22 +61,25 @@ export async function POST(request: Request) {
       mediaUrl: '',
       userType: 'citizen',
       userId: 999, // sandbox user ID
-      neighborhoodId: 5, // fallback
+      neighborhoodId: 5, // Forty Acres default
       createdAt,
       isProposal: false,
-      likes: 0,
-      seconds: 0,
-      dislikes: 0,
-      objections: 0,
+      walkingLikes: 0,
+      civicVotes: 0,
+      debateHeat: 0,
+      ripples: 0,
+      toxicityFlags: 0,
       hoursPassed: 0,
       userName: anonymousAuthorName,
       userRole: 'citizen',
       neighborhoodName: neighborhoodName || 'Wilmington Sandbox',
       latitude: Number(latitude),
       longitude: Number(longitude),
-      radiusMeters: proximity.radiusMeters,
-      shadowbanned: proximity.shadowbanned,
-      hitCityWall: proximity.hitCityWall
+      radius_meters: 800,
+      shadowbanned: false,
+      hit_city_wall: false,
+      userReactions: {},
+      userVotes: {}
     }
 
     await redis.lpush('sandbox:posts', JSON.stringify(newPost))
@@ -90,7 +94,7 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   try {
     const body = await request.json()
-    const { id, likes, seconds, dislikes, objections, hoursPassed } = body
+    const { id, walkingLikes, civicVotes, debateHeat, ripples, toxicityFlags, hoursPassed } = body
 
     if (id === undefined) {
       return NextResponse.json({ success: false, error: 'Post ID is required' }, { status: 400 })
@@ -102,53 +106,68 @@ export async function PUT(request: Request) {
     }
 
     const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
-    const posts = rawPosts.map((p: any) => typeof p === 'string' ? JSON.parse(p) : p)
+    const posts = rawPosts.map((item: any) => {
+      try {
+        if (typeof item === 'object' && item !== null) return item
+        return typeof item === 'string' ? JSON.parse(item) : item
+      } catch (e) {
+        console.error("Malformed sandbox post skipped:", item)
+        return null
+      }
+    }).filter(Boolean)
     
-    const targetPost = posts.find((p: any) => p.id === id)
-    if (!targetPost) {
+    const targetPostIndex = posts.findIndex((p: any) => String(p.id) === String(id))
+    if (targetPostIndex === -1) {
       return NextResponse.json({ success: false, error: 'Post not found in Sandbox' }, { status: 404 })
     }
+
+    const targetPost = posts[targetPostIndex]
 
     // Simulate decay offset by setting a past createdAt date
     const calculatedCreatedAt = new Date(Date.now() - (hoursPassed * 3600 * 1000)).toISOString()
 
-    const proximity = computeProximity({
-      likes,
-      seconds,
-      dislikes,
-      objections,
-      createdAt: calculatedCreatedAt
-    })
+    const interactionScore = (walkingLikes * 200) + (civicVotes * 300) + (debateHeat * 20)
+    const rippleBonus = 1 + (ripples * 0.1)
+    const multipliedScore = interactionScore * rippleBonus
+    const toxicityMultiplier = 1 + (toxicityFlags * 0.5)
+    const totalDecay = hoursPassed * 50 * toxicityMultiplier
+    let finalRadius = 800 + multipliedScore - totalDecay
 
-    const updatedPosts = posts.map((p: any) => {
-      if (p.id === id) {
-        return {
-          ...p,
-          likes,
-          seconds,
-          dislikes,
-          objections,
-          hoursPassed,
-          createdAt: calculatedCreatedAt,
-          radiusMeters: proximity.radiusMeters,
-          shadowbanned: proximity.shadowbanned,
-          hitCityWall: proximity.hitCityWall
-        }
+    let shadowbanned = false
+    let hit_city_wall = false
+
+    if (toxicityFlags >= 10) {
+      finalRadius = 0
+      shadowbanned = true
+    } else {
+      finalRadius = Math.max(800, finalRadius)
+      if (finalRadius >= 8000) {
+        finalRadius = 8000
+        hit_city_wall = true
       }
-      return p
-    })
+    }
+
+    const updatedPost = {
+      ...targetPost,
+      walkingLikes: Number(walkingLikes),
+      civicVotes: Number(civicVotes),
+      debateHeat: Number(debateHeat),
+      ripples: Number(ripples),
+      toxicityFlags: Number(toxicityFlags),
+      hoursPassed: Number(hoursPassed),
+      createdAt: calculatedCreatedAt,
+      radius_meters: Math.round(finalRadius),
+      shadowbanned,
+      hit_city_wall: hit_city_wall
+    }
+
+    posts[targetPostIndex] = updatedPost
 
     // Write back atomically
     await redis.del('sandbox:posts')
-    if (updatedPosts.length > 0) {
-      const pipeline = redis.pipeline()
-      for (const p of updatedPosts) {
-        pipeline.rpush('sandbox:posts', JSON.stringify(p))
-      }
-      await pipeline.exec()
+    if (posts.length > 0) {
+      await redis.rpush('sandbox:posts', ...posts.map(p => JSON.stringify(p)))
     }
-
-    const updatedPost = updatedPosts.find((p: any) => p.id === id)
 
     return NextResponse.json({ success: true, post: updatedPost })
   } catch (err: any) {
@@ -170,24 +189,27 @@ export async function DELETE(request: Request) {
     if (!idParam) {
       // Clear entire sandbox feed
       await redis.del('sandbox:posts')
-      return NextResponse.json({ success: true, message: 'All sandbox posts cleared' })
+      return NextResponse.json({ success: true, message: "Sandbox feed successfully cleared" }, { status: 200 })
     }
 
-    const id = Number(idParam)
     const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
-    const posts = rawPosts.map((p: any) => typeof p === 'string' ? JSON.parse(p) : p)
-    const filteredPosts = posts.filter((p: any) => p.id !== id)
+    const posts = rawPosts.map((item: any) => {
+      try {
+        if (typeof item === 'object' && item !== null) return item
+        return typeof item === 'string' ? JSON.parse(item) : item
+      } catch (e) {
+        console.error("Malformed sandbox post skipped:", item)
+        return null
+      }
+    }).filter(Boolean)
+    const filteredPosts = posts.filter((p: any) => String(p.id) !== String(idParam))
 
     await redis.del('sandbox:posts')
     if (filteredPosts.length > 0) {
-      const pipeline = redis.pipeline()
-      for (const p of filteredPosts) {
-        pipeline.rpush('sandbox:posts', JSON.stringify(p))
-      }
-      await pipeline.exec()
+      await redis.rpush('sandbox:posts', ...filteredPosts.map(p => JSON.stringify(p)))
     }
 
-    return NextResponse.json({ success: true, message: `Post ${id} deleted` })
+    return NextResponse.json({ success: true, message: `Post ${idParam} deleted` })
   } catch (err: any) {
     console.error('Error in DELETE /api/posts/sandbox:', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
