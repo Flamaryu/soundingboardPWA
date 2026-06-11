@@ -78,7 +78,7 @@ export async function POST(request: Request) {
       if (!redis) {
         return NextResponse.json({ success: false, error: 'Database credentials missing for this preview branch' }, { status: 503 })
       }
-      const { content, latitude, longitude } = body
+      const { content, latitude, longitude, mediaUrl, mediaType, type = 'miniblog', title } = body
       if (!content || !content.trim()) {
         return NextResponse.json({ success: false, error: 'Content is required' }, { status: 400 })
       }
@@ -97,7 +97,11 @@ export async function POST(request: Request) {
 
       const newPost = {
         id,
+        title: title || (content.trim().slice(0, 45) + (content.trim().length > 45 ? '...' : '')),
         content: content.trim(),
+        type,
+        mediaUrl: mediaUrl || '',
+        mediaType: mediaType || 'none',
         latitude: postLat,
         longitude: postLng,
         walkingLikes: 0,

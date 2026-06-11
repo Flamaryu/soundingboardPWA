@@ -58,7 +58,7 @@ function getApproxDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c
 }
 
-const NEIGHBORHOOD_CENTROIDS = [
+export const NEIGHBORHOOD_CENTROIDS = [
   { name: 'Center City', lat: 39.7447, lng: -75.5484 },
   { name: 'Trolley Square', lat: 39.7570, lng: -75.5645 },
   { name: 'Kentmere', lat: 39.7635, lng: -75.5745 },

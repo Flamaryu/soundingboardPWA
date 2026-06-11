@@ -38,7 +38,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { content, latitude, longitude, neighborhoodName, type = 'miniblog' } = body
+    const { content, latitude, longitude, neighborhoodName, type = 'miniblog', mediaUrl, mediaType } = body
 
     if (!content) {
       return NextResponse.json({ success: false, error: 'Content is required' }, { status: 400 })
@@ -59,7 +59,8 @@ export async function POST(request: Request) {
       title: content.slice(0, 45) + (content.length > 45 ? '...' : ''),
       content,
       type,
-      mediaUrl: '',
+      mediaUrl: mediaUrl || '',
+      mediaType: mediaType || 'none',
       userType: 'citizen',
       userId: 999, // sandbox user ID
       neighborhoodId: 5, // Forty Acres default

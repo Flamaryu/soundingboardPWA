@@ -29,7 +29,7 @@ import { reactToPost, createPost, castCivicVote } from '@/app/actions/posts'
 import { resolveAddress } from '@/app/actions/neighborhood'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
 import QRRedirectDetector from './QRRedirectDetector'
-import { getPostOriginNeighborhood } from '@/lib/wilmingtonSpatialMap'
+import { getPostOriginNeighborhood, NEIGHBORHOOD_CENTROIDS, getNeighborhoodSpatialInfo } from '@/lib/wilmingtonSpatialMap'
 
 // Dynamically import Leaflet map to avoid server-side rendering issues
 const DynamicLeafletMap = dynamic(() => import('./LeafletMap'), {
@@ -79,6 +79,16 @@ const isVideoUrl = (url: string) => {
     url.includes('video-') ||
     url.includes('mp4')
   )
+}
+
+const getYouTubeId = (url: string): string | null => {
+  if (!url) return null
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/)([^#\&\?]*).*/
+  const match = url.match(regExp)
+  if (match && match[2].length === 11) {
+    return match[2]
+  }
+  return null
 }
 
 const getBoundaryCentroid = (boundary: any): { lat: number; lng: number } | null => {
@@ -241,6 +251,9 @@ export default function FluidLayoutContainer({
 
   // Geolocation & view states
   const [userLocation, setUserLocation] = useState<{ lng: number; lat: number } | null>(null)
+  const [feedCenter, setFeedCenter] = useState<{ lng: number; lat: number } | null>(null)
+  const [searchOverrideLocation, setSearchOverrideLocation] = useState<{ lat: number; lng: number; type: string } | null>(null)
+  const [activePostId, setActivePostId] = useState<string | number | null>(null)
   const [viewMode, setViewMode] = useState<'walking' | 'neighborhood' | 'district' | 'city' | 'council' | 'historic'>('neighborhood')
   const [mapCenter, setMapCenter] = useState({ lng: -75.548, lat: 39.742 })
   const [mapZoom, setMapZoom] = useState(13)
@@ -272,11 +285,49 @@ export default function FluidLayoutContainer({
       const res = await resolveAddress(addressInput)
       setAddressInput('')
       setGeoSuccessMessage(`Located: ${res.neighborhood.name}!`)
-      
-      // Center map on geocoded location coordinates
-      setActiveNhId(res.neighborhood.id)
+
+      let targetCenter = { lat: res.lat, lng: res.lng }
+
+      // Check if the geocoded location falls within the radius boundary of any neighborhood in the Spatial Dictionary
+      let insideExactZone = false
+      for (const nh of NEIGHBORHOOD_CENTROIDS) {
+        const spatialInfo = getNeighborhoodSpatialInfo(nh.name)
+        const d = getHaversineDistance(res.lng, res.lat, nh.lng, nh.lat)
+        if (d <= spatialInfo.borderDistance) {
+          insideExactZone = true
+          break
+        }
+      }
+
+      if (!insideExactZone) {
+        // Find the closest neighborhood center by true Haversine distance
+        let minDistance = Infinity
+        let closestNh = NEIGHBORHOOD_CENTROIDS[0]
+
+        for (const nh of NEIGHBORHOOD_CENTROIDS) {
+          const d = getHaversineDistance(res.lng, res.lat, nh.lng, nh.lat)
+          if (d < minDistance) {
+            minDistance = d
+            closestNh = nh
+          }
+        }
+        
+        targetCenter = { lat: closestNh.lat, lng: closestNh.lng }
+        
+        // Update active neighborhood context to match the closest zone
+        const resolvedNh = neighborhoods.find(n => n.name.toLowerCase().includes(closestNh.name.toLowerCase()))
+        if (resolvedNh) {
+          setActiveNhId(resolvedNh.id)
+        }
+      } else {
+        // Falls within an exact zone: center on the exact geocoded coordinates
+        setActiveNhId(res.neighborhood.id)
+      }
+
+      // Update searchOverrideLocation and feedCenter so the user can inspect the posts in this area
+      setSearchOverrideLocation({ lat: targetCenter.lat, lng: targetCenter.lng, type: 'neighborhood' })
       setViewMode('neighborhood')
-      triggerCameraMove({ lng: res.lng, lat: res.lat }, 14)
+      triggerCameraMove(targetCenter, 14)
     } catch (err) {
       setGeoError('Could not geocode address. Try Trolley Square or Highlands.')
     }
@@ -294,10 +345,18 @@ export default function FluidLayoutContainer({
   // Card Expansion State mapping
   const [expandedPosts, setExpandedPosts] = useState<Record<number, boolean>>({})
   const toggleExpand = (postId: number) => {
-    setExpandedPosts(prev => ({
-      ...prev,
-      [postId]: !prev[postId]
-    }))
+    setExpandedPosts(prev => {
+      const isCurrentlyExpanded = !!prev[postId];
+      if (isCurrentlyExpanded) {
+        setActivePostId(null)
+      } else {
+        setActivePostId(postId)
+      }
+      return {
+        ...prev,
+        [postId]: !prev[postId]
+      }
+    })
   }
 
   // Form State
@@ -330,13 +389,16 @@ export default function FluidLayoutContainer({
             lat: position.coords.latitude
           }
           setUserLocation(coords)
+          setFeedCenter(coords)
           // Default to walking mode if GPS location is successfully fetched
           setViewMode('walking')
           triggerCameraMove(coords, 15)
         },
         (error) => {
           console.warn('Geolocation access denied. Using Wilmington Center City fallback.')
-          setUserLocation({ lng: -75.548, lat: 39.742 })
+          const defaultCoords = { lng: -75.548, lat: 39.742 }
+          setUserLocation(defaultCoords)
+          setFeedCenter(defaultCoords)
           const nh = neighborhoods.find(n => n.id === initialNhId)
           if (nh) {
             const centroid = getBoundaryCentroid(nh.boundary)
@@ -349,13 +411,21 @@ export default function FluidLayoutContainer({
     }
   }, [])
 
+  // 1.5 Synchronize searchOverrideLocation updates to feedCenter
+  useEffect(() => {
+    if (searchOverrideLocation) {
+      setFeedCenter({ lat: searchOverrideLocation.lat, lng: searchOverrideLocation.lng })
+    }
+  }, [searchOverrideLocation])
+
   // 2. Fetch posts based on current parameters
   const fetchPosts = async () => {
     setLoadingPosts(true)
     try {
       if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
-        const lat = userLocation?.lat ?? mapCenter.lat
-        const lng = userLocation?.lng ?? mapCenter.lng
+        const refCenter = feedCenter ?? userLocation ?? { lat: mapCenter.lat, lng: mapCenter.lng }
+        const lat = refCenter.lat
+        const lng = refCenter.lng
         const response = await fetch(`/api/posts?lat=${lat}&lng=${lng}&userId=${activeUserId}`)
         if (response.status === 503) {
           setDbCredentialsMissing(true)
@@ -410,7 +480,7 @@ export default function FluidLayoutContainer({
   // Trigger post reload on map center/zoom change (debounced via LeafletMap component)
   useEffect(() => {
     fetchPosts()
-  }, [viewMode, mapCenter, mapZoom, activeNhId, activeUserId, activeCouncilDistrictId, activeHistoricDistrictId])
+  }, [viewMode, mapCenter, mapZoom, activeNhId, activeUserId, activeCouncilDistrictId, activeHistoricDistrictId, feedCenter])
 
   // Handle camera movements from the map client wrapper
   const handleCameraChange = (center: { lng: number; lat: number }, zoom: number) => {
@@ -509,11 +579,20 @@ export default function FluidLayoutContainer({
           const lat = userLocation?.lat ?? mapCenter.lat
           const lng = userLocation?.lng ?? mapCenter.lng
           
+          let evaluatedMediaType = 'none'
+          if (mediaUrl && mediaUrl.trim()) {
+            evaluatedMediaType = isVideoUrl(mediaUrl) ? 'video' : 'image'
+          }
+
           const response = await fetch('/api/posts', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              title: title.trim(),
               content: content.trim(),
+              type: postType,
+              mediaUrl: mediaUrl.trim(),
+              mediaType: evaluatedMediaType,
               latitude: lat,
               longitude: lng
             })
@@ -773,7 +852,7 @@ export default function FluidLayoutContainer({
     const height = window.innerHeight
     if (state === 'expanded') return 0 // covers full viewport height
     if (state === 'half') return height * 0.5 // 50% height
-    return height * 0.5 // Collapsed state showing map + feed header/first post
+    return height - 130 // Minimized resting baseline snapshot option (roughly 10% height / 130px height from bottom to keep tabs visible)
   }
 
   const handleStartDrag = (y: number) => {
@@ -806,7 +885,7 @@ export default function FluidLayoutContainer({
     const snapPoints: { state: DragState; y: number }[] = [
       { state: 'expanded', y: 0 },
       { state: 'half', y: height * 0.5 },
-      { state: 'collapsed', y: height * 0.5 }
+      { state: 'collapsed', y: height - 130 }
     ]
 
     // Find closest snap point
@@ -903,9 +982,8 @@ export default function FluidLayoutContainer({
     const radius = p.radius_meters ?? p.radiusMeters ?? 300
 
     if (typeof postLat === 'number' && typeof postLng === 'number') {
-      const refLat = userLocation?.lat ?? mapCenter.lat
-      const refLng = userLocation?.lng ?? mapCenter.lng
-      const dist = getHaversineDistance(refLng, refLat, postLng, postLat)
+      const refCenter = feedCenter ?? userLocation ?? { lat: mapCenter.lat, lng: mapCenter.lng }
+      const dist = getHaversineDistance(refCenter.lng, refCenter.lat, postLng, postLat)
       p.distance_meters = dist
       userDistance = dist
     }
@@ -915,9 +993,8 @@ export default function FluidLayoutContainer({
       return false
     }
 
-    // Shift Feeds to "Strict Boundary Breaking" Logic in Sandbox mode
-    const isSandbox = process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true'
-    if (isSandbox && typeof postLat === 'number' && typeof postLng === 'number') {
+    // Shift Feeds to "Strict Boundary Breaking" Logic
+    if (typeof postLat === 'number' && typeof postLng === 'number') {
       const spatialInfo = getPostOriginNeighborhood(postLat, postLng, p.neighborhoodName)
       
       if (viewMode === 'district') {
@@ -1022,6 +1099,9 @@ export default function FluidLayoutContainer({
           center={mapCenter}
           zoom={mapZoom}
           cameraTrigger={cameraTrigger}
+          setSearchOverrideLocation={setSearchOverrideLocation}
+          highlightedPostId={activePostId}
+          sheetState={sheetState}
           onSelectNeighborhood={(id) => {
             setActiveNhId(id)
             setViewMode('neighborhood')
@@ -1161,15 +1241,19 @@ export default function FluidLayoutContainer({
           {/* Toggle Close / Expand button */}
           <button
             onClick={() => {
-              setSheetState(prev => prev === 'collapsed' ? 'half' : 'collapsed')
+              setSheetState(prev => {
+                if (prev === 'collapsed') return 'half'
+                if (prev === 'half') return 'expanded'
+                return 'half'
+              })
             }}
             className="absolute right-5 top-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full p-1.5 transition-all text-xs flex items-center justify-center border border-slate-700 shadow-md"
             aria-label="Toggle drawer"
           >
-            {sheetState === 'collapsed' ? (
-              <ChevronUp className="w-3.5 h-3.5 text-[#00f5d4]" />
+            {sheetState === 'expanded' ? (
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hover:text-white" />
             ) : (
-              <X className="w-3.5 h-3.5 text-slate-400 hover:text-white" />
+              <ChevronUp className="w-3.5 h-3.5 text-[#00f5d4]" />
             )}
           </button>
         </div>
@@ -1584,27 +1668,50 @@ export default function FluidLayoutContainer({
                   </div>
 
                   {/* Attachment Media rendering */}
-                  {post.mediaUrl && post.mediaUrl.trim() !== '' && (
-                    <div 
-                      className="relative w-full max-h-80 flex items-center justify-center bg-black/10 rounded-md overflow-hidden mt-3"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {isVideoUrl(post.mediaUrl) ? (
-                        <video
-                          src={post.mediaUrl}
-                          controls
-                          className="w-full h-full max-h-80 object-contain"
-                        />
-                      ) : (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={post.mediaUrl}
-                          alt="Attachment"
-                          className="w-full h-full max-h-80 object-contain"
-                        />
-                      )}
-                    </div>
-                  )}
+                  {post.mediaUrl && post.mediaUrl.trim() !== '' && (() => {
+                    const ytId = getYouTubeId(post.mediaUrl)
+                    if (ytId) {
+                      const isShort = post.mediaUrl.includes('shorts/')
+                      return (
+                        <div 
+                          className={`relative w-full overflow-hidden border border-slate-800 bg-black mt-3 mx-auto ${
+                            isShort ? 'aspect-[9/16] max-w-[270px] rounded-3xl shadow-xl' : 'aspect-video rounded-2xl'
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <iframe
+                            src={`https://www.youtube.com/embed/${ytId}`}
+                            className="absolute top-0 left-0 w-full h-full border-0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            title="YouTube video player"
+                          />
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div 
+                        className="relative w-full max-h-80 flex items-center justify-center bg-black/10 rounded-md overflow-hidden mt-3"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {isVideoUrl(post.mediaUrl) ? (
+                          <video
+                            src={post.mediaUrl}
+                            controls
+                            className="w-full h-full max-h-80 object-contain"
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={post.mediaUrl}
+                            alt="Attachment"
+                            className="w-full h-full max-h-80 object-contain"
+                          />
+                        )}
+                      </div>
+                    )
+                  })()}
 
                   {/* Directions Action */}
                   {isExpanded && (post.isBeacon || post.userRole === 'business' || post.userType === 'business' || post.isProposal) && (
