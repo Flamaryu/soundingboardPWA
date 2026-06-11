@@ -426,7 +426,7 @@ export default function FluidLayoutContainer({
         const refCenter = feedCenter ?? userLocation ?? { lat: mapCenter.lat, lng: mapCenter.lng }
         const lat = refCenter.lat
         const lng = refCenter.lng
-        const response = await fetch(`/api/posts?lat=${lat}&lng=${lng}&userId=${activeUserId}`)
+        const response = await fetch(`/api/posts/sandbox?lat=${lat}&lng=${lng}&userId=${activeUserId}`)
         if (response.status === 503) {
           setDbCredentialsMissing(true)
           setLoadingPosts(false)
@@ -584,7 +584,7 @@ export default function FluidLayoutContainer({
             evaluatedMediaType = isVideoUrl(mediaUrl) ? 'video' : 'image'
           }
 
-          const response = await fetch('/api/posts', {
+          const response = await fetch('/api/posts/sandbox', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
