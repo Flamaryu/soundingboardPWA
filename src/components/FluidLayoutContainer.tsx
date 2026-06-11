@@ -422,7 +422,7 @@ export default function FluidLayoutContainer({
   const fetchPosts = async () => {
     setLoadingPosts(true)
     try {
-      if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      if (true) {
         const refCenter = feedCenter ?? userLocation ?? { lat: mapCenter.lat, lng: mapCenter.lng }
         const lat = refCenter.lat
         const lng = refCenter.lng
@@ -574,7 +574,7 @@ export default function FluidLayoutContainer({
     }
 
     startTransition(async () => {
-      if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      if (true) {
         try {
           const lat = userLocation?.lat ?? mapCenter.lat
           const lng = userLocation?.lng ?? mapCenter.lng
@@ -752,7 +752,7 @@ export default function FluidLayoutContainer({
       })
     })
 
-    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+    if (true) {
       try {
         const res = await fetch('/api/posts/interact', {
           method: 'PATCH',
@@ -818,7 +818,7 @@ export default function FluidLayoutContainer({
       })
     })
 
-    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+    if (true) {
       try {
         const res = await fetch('/api/posts/interact', {
           method: 'PATCH',

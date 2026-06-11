@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     const body = await request.json()
 
     // 1. Check if Sandbox Mode is enabled
-    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+    if (true) {
       if (!redis) {
         return NextResponse.json({ success: false, error: 'Database credentials missing for this preview branch' }, { status: 503 })
       }
@@ -138,7 +138,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
 
     // 1. Check if Sandbox Mode is enabled
-    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+    if (true) {
       if (!redis) {
         return NextResponse.json({ success: false, error: 'Database credentials missing for this preview branch' }, { status: 503 })
       }
@@ -233,7 +233,7 @@ export async function GET(request: Request) {
     const polyParam = searchParams.get('polygonGeoJson')
     if (polyParam) {
       try {
-        polygonGeoJson = JSON.parse(polyParam)
+        polygonGeoJson = JSON.parse(polyParam as string)
       } catch (e) {
         console.warn('Failed to parse polygonGeoJson from URL param')
       }

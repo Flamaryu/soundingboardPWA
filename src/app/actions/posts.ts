@@ -559,7 +559,7 @@ export async function createPost(data: {
   const createdAt = new Date().toISOString()
   
   // Sandbox Mode Interception
-  const isSandbox = process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true'
+  const isSandbox = true
   if (isSandbox) {
     try {
       const { Redis } = await import('@upstash/redis')
