@@ -1,4 +1,4 @@
-export const dynamic = 'force-dynamic'
+export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'

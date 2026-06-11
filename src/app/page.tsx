@@ -1,10 +1,9 @@
+export const dynamic = 'force-dynamic';
+
 import { getNeighborhoods, getCouncilDistricts, getHistoricDistricts } from '@/app/actions/neighborhood'
 import { getActiveUser, getMockUsers } from '@/app/actions/posts'
 import FluidLayoutContainer from '@/components/FluidLayoutContainer'
 import * as flags from '@/flags'
-
-// Force dynamic rendering to ensure search params are read correctly on every request
-export const dynamic = 'force-dynamic'
 
 interface PageProps {
   searchParams: Promise<{ view?: string; nh?: string; user?: string; [key: string]: string | undefined }>

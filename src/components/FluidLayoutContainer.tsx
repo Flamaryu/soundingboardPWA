@@ -982,7 +982,13 @@ export default function FluidLayoutContainer({
     const radius = p.radius_meters ?? p.radiusMeters ?? 300
 
     if (typeof postLat === 'number' && typeof postLng === 'number') {
-      const refCenter = feedCenter ?? userLocation ?? { lat: mapCenter.lat, lng: mapCenter.lng }
+      const isUserLocationInvalid = !userLocation || !userLocation.lat || !userLocation.lng || userLocation.lat === 0 || userLocation.lng === 0;
+      const baselineCoordinates = isUserLocationInvalid
+        ? { lat: 39.7447, lng: -75.5484 }
+        : userLocation;
+      const isFeedCenterInvalid = !feedCenter || !feedCenter.lat || !feedCenter.lng || feedCenter.lat === 0 || feedCenter.lng === 0;
+      const refCenter = isFeedCenterInvalid ? baselineCoordinates : feedCenter;
+
       const dist = getHaversineDistance(refCenter.lng, refCenter.lat, postLng, postLat)
       p.distance_meters = dist
       userDistance = dist
