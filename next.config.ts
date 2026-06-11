@@ -14,7 +14,16 @@ const nextConfig: NextConfig = {
         '*.loca.lt'
       ]
     }
-  }
+  },
+  async redirects() {
+    return [
+      {
+        source: '/sticker',
+        destination: '/?source=sticker',
+        permanent: false,
+      },
+    ]
+  },
 };
 
 export default nextConfig;

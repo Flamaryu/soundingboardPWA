@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useTransition } from 'react'
+import { useState, useEffect, useRef, useTransition, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { 
@@ -22,10 +22,14 @@ import {
   ImageIcon,
   ChevronUp,
   ChevronDown,
-  X
+  X,
+  AlertTriangle
 } from 'lucide-react'
 import { reactToPost, createPost, castCivicVote } from '@/app/actions/posts'
 import { resolveAddress } from '@/app/actions/neighborhood'
+import { usePWAInstall } from '@/hooks/usePWAInstall'
+import QRRedirectDetector from './QRRedirectDetector'
+import { getPostOriginNeighborhood, NEIGHBORHOOD_CENTROIDS, getNeighborhoodSpatialInfo } from '@/lib/wilmingtonSpatialMap'
 
 // Dynamically import Leaflet map to avoid server-side rendering issues
 const DynamicLeafletMap = dynamic(() => import('./LeafletMap'), {
@@ -77,6 +81,16 @@ const isVideoUrl = (url: string) => {
   )
 }
 
+const getYouTubeId = (url: string): string | null => {
+  if (!url) return null
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=|shorts\/)([^#\&\?]*).*/
+  const match = url.match(regExp)
+  if (match && match[2].length === 11) {
+    return match[2]
+  }
+  return null
+}
+
 const getBoundaryCentroid = (boundary: any): { lat: number; lng: number } | null => {
   if (!boundary || !boundary.coordinates) return null
   let totalLng = 0, totalLat = 0, count = 0
@@ -97,6 +111,18 @@ const getBoundaryCentroid = (boundary: any): { lat: number; lng: number } | null
     return { lat: totalLat / count, lng: totalLng / count }
   }
   return null
+}
+
+function getHaversineDistance(lon1: number, lat1: number, lon2: number, lat2: number): number {
+  const R = 6371000 // Radius of Earth in meters
+  const dLat = (lat2 - lat1) * Math.PI / 180
+  const dLon = (lon2 - lon1) * Math.PI / 180
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))
+  return R * c // returns distance in meters
 }
 
 interface TruncatedContentProps {
@@ -185,6 +211,38 @@ export default function FluidLayoutContainer({
   }
   const [activeUserId, setActiveUserId] = useState(initialUserId)
   const [activeNhId, setActiveNhId] = useState(initialNhId)
+  const [dbCredentialsMissing, setDbCredentialsMissing] = useState(false)
+
+  // QR Welcome Banner State
+  const [showQRWelcome, setShowQRWelcome] = useState(false)
+  const [isQrVisitor, setIsQrVisitor] = useState(false)
+
+  // PWA Install Prompt Hook
+  const { isInstallable, isInstalled, isIOS, isSafari, install } = usePWAInstall()
+  const [dismissedInstall, setDismissedInstall] = useState(true)
+  const [dismissedIOS, setDismissedIOS] = useState(true)
+  const [dismissedOpenApp, setDismissedOpenApp] = useState(true)
+
+  // Beta Feedback Form States
+  const [showFeedbackCard, setShowFeedbackCard] = useState(false)
+  const [feedbackText, setFeedbackText] = useState('')
+  const [submittingFeedback, setSubmittingFeedback] = useState(false)
+  const [feedbackSuccess, setFeedbackSuccess] = useState(false)
+  const [feedbackError, setFeedbackError] = useState('')
+
+  // Sync PWA dismissal variables & check QR code landing ref
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setDismissedInstall(sessionStorage.getItem('dismissed-pwa-install') === 'true')
+      setDismissedIOS(sessionStorage.getItem('dismissed-pwa-ios') === 'true')
+      setDismissedOpenApp(sessionStorage.getItem('dismissed-pwa-open') === 'true')
+
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('ref') === 'qr' || params.get('source') === 'sticker') {
+        setShowQRWelcome(true)
+      }
+    }
+  }, [])
   
   const [activeMapLayer, setActiveMapLayer] = useState<'neighborhood' | 'council' | 'historic'>('neighborhood')
   const [activeCouncilDistrictId, setActiveCouncilDistrictId] = useState(1)
@@ -193,6 +251,9 @@ export default function FluidLayoutContainer({
 
   // Geolocation & view states
   const [userLocation, setUserLocation] = useState<{ lng: number; lat: number } | null>(null)
+  const [feedCenter, setFeedCenter] = useState<{ lng: number; lat: number } | null>(null)
+  const [searchOverrideLocation, setSearchOverrideLocation] = useState<{ lat: number; lng: number; type: string } | null>(null)
+  const [activePostId, setActivePostId] = useState<string | number | null>(null)
   const [viewMode, setViewMode] = useState<'walking' | 'neighborhood' | 'district' | 'city' | 'council' | 'historic'>('neighborhood')
   const [mapCenter, setMapCenter] = useState({ lng: -75.548, lat: 39.742 })
   const [mapZoom, setMapZoom] = useState(13)
@@ -224,11 +285,49 @@ export default function FluidLayoutContainer({
       const res = await resolveAddress(addressInput)
       setAddressInput('')
       setGeoSuccessMessage(`Located: ${res.neighborhood.name}!`)
-      
-      // Center map on geocoded location coordinates
-      setActiveNhId(res.neighborhood.id)
+
+      let targetCenter = { lat: res.lat, lng: res.lng }
+
+      // Check if the geocoded location falls within the radius boundary of any neighborhood in the Spatial Dictionary
+      let insideExactZone = false
+      for (const nh of NEIGHBORHOOD_CENTROIDS) {
+        const spatialInfo = getNeighborhoodSpatialInfo(nh.name)
+        const d = getHaversineDistance(res.lng, res.lat, nh.lng, nh.lat)
+        if (d <= spatialInfo.borderDistance) {
+          insideExactZone = true
+          break
+        }
+      }
+
+      if (!insideExactZone) {
+        // Find the closest neighborhood center by true Haversine distance
+        let minDistance = Infinity
+        let closestNh = NEIGHBORHOOD_CENTROIDS[0]
+
+        for (const nh of NEIGHBORHOOD_CENTROIDS) {
+          const d = getHaversineDistance(res.lng, res.lat, nh.lng, nh.lat)
+          if (d < minDistance) {
+            minDistance = d
+            closestNh = nh
+          }
+        }
+        
+        targetCenter = { lat: closestNh.lat, lng: closestNh.lng }
+        
+        // Update active neighborhood context to match the closest zone
+        const resolvedNh = neighborhoods.find(n => n.name.toLowerCase().includes(closestNh.name.toLowerCase()))
+        if (resolvedNh) {
+          setActiveNhId(resolvedNh.id)
+        }
+      } else {
+        // Falls within an exact zone: center on the exact geocoded coordinates
+        setActiveNhId(res.neighborhood.id)
+      }
+
+      // Update searchOverrideLocation and feedCenter so the user can inspect the posts in this area
+      setSearchOverrideLocation({ lat: targetCenter.lat, lng: targetCenter.lng, type: 'neighborhood' })
       setViewMode('neighborhood')
-      triggerCameraMove({ lng: res.lng, lat: res.lat }, 14)
+      triggerCameraMove(targetCenter, 14)
     } catch (err) {
       setGeoError('Could not geocode address. Try Trolley Square or Highlands.')
     }
@@ -246,10 +345,18 @@ export default function FluidLayoutContainer({
   // Card Expansion State mapping
   const [expandedPosts, setExpandedPosts] = useState<Record<number, boolean>>({})
   const toggleExpand = (postId: number) => {
-    setExpandedPosts(prev => ({
-      ...prev,
-      [postId]: !prev[postId]
-    }))
+    setExpandedPosts(prev => {
+      const isCurrentlyExpanded = !!prev[postId];
+      if (isCurrentlyExpanded) {
+        setActivePostId(null)
+      } else {
+        setActivePostId(postId)
+      }
+      return {
+        ...prev,
+        [postId]: !prev[postId]
+      }
+    })
   }
 
   // Form State
@@ -282,13 +389,16 @@ export default function FluidLayoutContainer({
             lat: position.coords.latitude
           }
           setUserLocation(coords)
+          setFeedCenter(coords)
           // Default to walking mode if GPS location is successfully fetched
           setViewMode('walking')
           triggerCameraMove(coords, 15)
         },
         (error) => {
           console.warn('Geolocation access denied. Using Wilmington Center City fallback.')
-          setUserLocation({ lng: -75.548, lat: 39.742 })
+          const defaultCoords = { lng: -75.548, lat: 39.742 }
+          setUserLocation(defaultCoords)
+          setFeedCenter(defaultCoords)
           const nh = neighborhoods.find(n => n.id === initialNhId)
           if (nh) {
             const centroid = getBoundaryCentroid(nh.boundary)
@@ -301,10 +411,35 @@ export default function FluidLayoutContainer({
     }
   }, [])
 
+  // 1.5 Synchronize searchOverrideLocation updates to feedCenter
+  useEffect(() => {
+    if (searchOverrideLocation) {
+      setFeedCenter({ lat: searchOverrideLocation.lat, lng: searchOverrideLocation.lng })
+    }
+  }, [searchOverrideLocation])
+
   // 2. Fetch posts based on current parameters
   const fetchPosts = async () => {
     setLoadingPosts(true)
     try {
+      if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+        const refCenter = feedCenter ?? userLocation ?? { lat: mapCenter.lat, lng: mapCenter.lng }
+        const lat = refCenter.lat
+        const lng = refCenter.lng
+        const response = await fetch(`/api/posts?lat=${lat}&lng=${lng}&userId=${activeUserId}`)
+        if (response.status === 503) {
+          setDbCredentialsMissing(true)
+          setLoadingPosts(false)
+          return
+        }
+        if (response.ok) {
+          const data = await response.json()
+          setPosts(data.posts || [])
+        }
+        setLoadingPosts(false)
+        return
+      }
+
       const activeNh = neighborhoods.find(n => n.id === activeNhId)
       
       const payload = {
@@ -325,6 +460,12 @@ export default function FluidLayoutContainer({
         body: JSON.stringify(payload)
       })
 
+      if (response.status === 503) {
+        setDbCredentialsMissing(true)
+        setLoadingPosts(false)
+        return
+      }
+
       if (response.ok) {
         const data = await response.json()
         setPosts(data.posts || [])
@@ -339,7 +480,7 @@ export default function FluidLayoutContainer({
   // Trigger post reload on map center/zoom change (debounced via LeafletMap component)
   useEffect(() => {
     fetchPosts()
-  }, [viewMode, mapCenter, mapZoom, activeNhId, activeUserId, activeCouncilDistrictId, activeHistoricDistrictId])
+  }, [viewMode, mapCenter, mapZoom, activeNhId, activeUserId, activeCouncilDistrictId, activeHistoricDistrictId, feedCenter])
 
   // Handle camera movements from the map client wrapper
   const handleCameraChange = (center: { lng: number; lat: number }, zoom: number) => {
@@ -427,12 +568,66 @@ export default function FluidLayoutContainer({
     e.preventDefault()
     setFormError('')
 
-    if (!title.trim() || !content.trim()) {
-      setFormError('Please fill in both title and content fields.')
+    if (!content.trim()) {
+      setFormError('Please write some content.')
       return
     }
 
     startTransition(async () => {
+      if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+        try {
+          const lat = userLocation?.lat ?? mapCenter.lat
+          const lng = userLocation?.lng ?? mapCenter.lng
+          
+          let evaluatedMediaType = 'none'
+          if (mediaUrl && mediaUrl.trim()) {
+            evaluatedMediaType = isVideoUrl(mediaUrl) ? 'video' : 'image'
+          }
+
+          const response = await fetch('/api/posts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: title.trim(),
+              content: content.trim(),
+              type: postType,
+              mediaUrl: mediaUrl.trim(),
+              mediaType: evaluatedMediaType,
+              latitude: lat,
+              longitude: lng
+            })
+          })
+
+          if (response.ok) {
+            const res = await response.json()
+            if (res.success) {
+              setTitle('')
+              setContent('')
+              setMediaUrl('')
+              setIsProposal(false)
+              setBlastToCouncil(false)
+              setIsBeacon(false)
+              setIsPinned(false)
+              setIsAnonymous(false)
+              setShowCreateForm(false)
+              fetchPosts()
+            } else {
+              setFormError(res.error || 'Failed to publish post.')
+            }
+          } else {
+            setFormError('Failed to publish post.')
+          }
+        } catch (err) {
+          setFormError('Failed to publish post due to a network error.')
+        }
+        return
+      }
+
+      if (!title.trim()) {
+        setFormError('Please write a headline.')
+        return
+      }
+
       const res = await createPost({
         title,
         content,
@@ -498,13 +693,13 @@ export default function FluidLayoutContainer({
 
   // React to post
   const handleReact = async (
-    postId: number, 
+    postId: number | string, 
     reactionType: 'like' | 'second' | 'dislike' | 'object' | 'love_local' | 'second_this' | 'not_for_me' | 'bad_for_community'
   ) => {
     // Optimistically update reactions locally for instant response
     setPosts(prevPosts => {
       return prevPosts.map(post => {
-        if (post.id !== postId) return post
+        if (String(post.id) !== String(postId)) return post
         
         let likes = post.likes || 0
         let seconds = post.seconds || 0
@@ -557,18 +752,40 @@ export default function FluidLayoutContainer({
       })
     })
 
-    const res = await reactToPost(postId, activeUserId, reactionType)
+    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      try {
+        const res = await fetch('/api/posts/interact', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: postId,
+            userId: activeUserId,
+            reactionType,
+            lat: userLocation?.lat ?? mapCenter.lat,
+            lng: userLocation?.lng ?? mapCenter.lng
+          })
+        })
+        if (res.ok) {
+          fetchPosts()
+        }
+      } catch (err) {
+        console.error('Failed to react in sandbox:', err)
+      }
+      return
+    }
+
+    const res = await reactToPost(Number(postId), activeUserId, reactionType, userLocation?.lat || mapCenter.lat, userLocation?.lng || mapCenter.lng)
     if (res.success) {
       fetchPosts()
     }
   }
 
   // Cast civic vote
-  const handleCivicVote = async (postId: number, voteType: 'agree' | 'object') => {
+  const handleCivicVote = async (postId: number | string, voteType: 'agree' | 'object') => {
     // Optimistically update votes locally
     setPosts(prevPosts => {
       return prevPosts.map(post => {
-        if (post.id !== postId) return post
+        if (String(post.id) !== String(postId)) return post
         
         let seconds = post.seconds || 0
         let objections = post.objections || 0
@@ -601,7 +818,29 @@ export default function FluidLayoutContainer({
       })
     })
 
-    const res = await castCivicVote(postId, activeUserId, voteType)
+    if (process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true') {
+      try {
+        const res = await fetch('/api/posts/interact', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: postId,
+            userId: activeUserId,
+            voteType,
+            lat: userLocation?.lat ?? mapCenter.lat,
+            lng: userLocation?.lng ?? mapCenter.lng
+          })
+        })
+        if (res.ok) {
+          fetchPosts()
+        }
+      } catch (err) {
+        console.error('Failed to vote in sandbox:', err)
+      }
+      return
+    }
+
+    const res = await castCivicVote(Number(postId), activeUserId, voteType, userLocation?.lat || mapCenter.lat, userLocation?.lng || mapCenter.lng)
     if (res.success) {
       fetchPosts()
     }
@@ -613,7 +852,7 @@ export default function FluidLayoutContainer({
     const height = window.innerHeight
     if (state === 'expanded') return 0 // covers full viewport height
     if (state === 'half') return height * 0.5 // 50% height
-    return height * 0.5 // Collapsed state showing map + feed header/first post
+    return height - 130 // Minimized resting baseline snapshot option (roughly 10% height / 130px height from bottom to keep tabs visible)
   }
 
   const handleStartDrag = (y: number) => {
@@ -646,7 +885,7 @@ export default function FluidLayoutContainer({
     const snapPoints: { state: DragState; y: number }[] = [
       { state: 'expanded', y: 0 },
       { state: 'half', y: height * 0.5 },
-      { state: 'collapsed', y: height * 0.5 }
+      { state: 'collapsed', y: height - 130 }
     ]
 
     // Find closest snap point
@@ -694,22 +933,102 @@ export default function FluidLayoutContainer({
     }
   }, [isDragging])
 
+  // Beta Feedback Submit Handler
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!feedbackText.trim()) return
+    setSubmittingFeedback(true)
+    setFeedbackError('')
+    try {
+      const res = await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: feedbackText })
+      })
+      if (res.ok) {
+        setFeedbackSuccess(true)
+        setFeedbackText('')
+        setTimeout(() => {
+          setFeedbackSuccess(false)
+          setShowFeedbackCard(false)
+        }, 2500)
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        setFeedbackError(errData.error || 'Could not save feedback. Please try again.')
+      }
+    } catch (err) {
+      setFeedbackError('Network error. Please try again.')
+    } finally {
+      setSubmittingFeedback(false)
+    }
+  }
+
   // Filter posts client-side for search queries and enabled post types
   const filteredPosts = posts.filter(p => {
     if (p.type === 'miniblog' && !flags.enableMiniblogs) return false
     if (p.type === 'story' && !flags.enableStories) return false
     if (p.type === 'short' && !flags.enableVideoShorts) return false
     
+    // Proximity/radius filtering: check distance <= radius_meters
+    let postLat = p.latitude
+    let postLng = p.longitude
+    if (typeof postLat !== 'number' || typeof postLng !== 'number') {
+      const resolved = getPostCoordinates(p)
+      postLat = resolved.lat
+      postLng = resolved.lng
+    }
+
+    let userDistance = 0
+    const radius = p.radius_meters ?? p.radiusMeters ?? 300
+
+    if (typeof postLat === 'number' && typeof postLng === 'number') {
+      const isUserLocationInvalid = !userLocation || !userLocation.lat || !userLocation.lng || userLocation.lat === 0 || userLocation.lng === 0;
+      const baselineCoordinates = isUserLocationInvalid
+        ? { lat: 39.7447, lng: -75.5484 }
+        : userLocation;
+      const isFeedCenterInvalid = !feedCenter || !feedCenter.lat || !feedCenter.lng || feedCenter.lat === 0 || feedCenter.lng === 0;
+      const refCenter = isFeedCenterInvalid ? baselineCoordinates : feedCenter;
+
+      const dist = getHaversineDistance(refCenter.lng, refCenter.lat, postLng, postLat)
+      p.distance_meters = dist
+      userDistance = dist
+    }
+
+    // Base Condition for ALL feeds: distance <= post's radius_meters
+    if (userDistance > radius) {
+      return false
+    }
+
+    // Shift Feeds to "Strict Boundary Breaking" Logic
+    if (typeof postLat === 'number' && typeof postLng === 'number') {
+      const spatialInfo = getPostOriginNeighborhood(postLat, postLng, p.neighborhoodName)
+      
+      if (viewMode === 'district') {
+        // District Feed: Show posts that physically broke out of their origin neighborhood
+        if (radius < spatialInfo.borderDistance) {
+          return false
+        }
+      } else if (viewMode === 'city') {
+        // City Wide Feed: Show posts that physically broke out of their parent district
+        if (radius < spatialInfo.districtBorderDistance) {
+          return false
+        }
+      }
+    }
+    
     if (!flags.enableSearch) return true
     
     const q = searchQuery.toLowerCase()
-    return p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q)
+    return (
+      (p.title?.toLowerCase() || '').includes(q) || 
+      (p.content?.toLowerCase() || '').includes(q)
+    )
   })
 
   // Format active scope description
   const activeNh = neighborhoods.find(n => n.id === activeNhId)
   const activeScopeTitle = () => {
-    if (viewMode === 'walking') return '🚶‍♂️ Walking Radius (800m)'
+    if (viewMode === 'walking') return '🚶‍♂️ Walking Radius (300m)'
     if (viewMode === 'neighborhood') return `🏡 Neighborhood: ${activeNh ? activeNh.name : 'Unknown'}`
     if (viewMode === 'district') return `🏛️ District: ${activeNh ? activeNh.districtName : 'Unknown'}`
     if (viewMode === 'council') {
@@ -721,6 +1040,50 @@ export default function FluidLayoutContainer({
       return `📜 Historic District: ${hd ? hd.name : 'Unknown'}`
     }
     return '🌆 City: Wilmington Wide'
+  }
+
+  if (dbCredentialsMissing) {
+    return (
+      <div className="w-full h-screen bg-[#0b132b] flex items-center justify-center p-4">
+        <div className="bg-[#1c2541]/85 border border-[#d90429]/40 backdrop-blur-lg rounded-3xl p-8 max-w-md w-full shadow-2xl flex flex-col items-center text-center gap-5 animate-fadeIn">
+          <div className="w-16 h-16 rounded-full bg-[#d90429]/10 border border-[#d90429]/30 flex items-center justify-center shadow-lg shadow-[#d90429]/10 animate-pulse">
+            <AlertTriangle className="w-8 h-8 text-[#d90429]" />
+          </div>
+          <div>
+            <span className="bg-[#d90429]/25 text-[#d90429] text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full border border-[#d90429]/20">
+              Database Connection Offline
+            </span>
+            <h2 className="text-lg font-black text-white mt-3 tracking-wide">Credentials Missing</h2>
+            <p className="text-[11px] text-slate-300 leading-relaxed mt-2.5">
+              This preview branch is currently missing the required Upstash Redis database environment variables. Please check your deployment settings.
+            </p>
+          </div>
+          <div className="w-full bg-[#0b132b]/60 border border-slate-700/30 rounded-2xl p-4.5 text-left flex flex-col gap-2">
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">NEXT_PUBLIC_ENABLE_SANDBOX_MODE</span>
+              <span className="text-emerald-400 font-extrabold font-mono">true</span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">UPSTASH_REDIS_REST_URL</span>
+              <span className="text-[#d90429] font-extrabold font-mono">Missing</span>
+            </div>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="text-slate-400 font-bold">UPSTASH_REDIS_REST_TOKEN</span>
+              <span className="text-[#d90429] font-extrabold font-mono">Missing</span>
+            </div>
+          </div>
+          <button 
+            onClick={() => {
+              setDbCredentialsMissing(false)
+              fetchPosts()
+            }}
+            className="w-full py-3 bg-[#d90429] hover:bg-[#b00320] text-white font-black rounded-xl text-xs transition-all active:scale-95 cursor-pointer shadow-lg shadow-[#d90429]/15"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -742,6 +1105,9 @@ export default function FluidLayoutContainer({
           center={mapCenter}
           zoom={mapZoom}
           cameraTrigger={cameraTrigger}
+          setSearchOverrideLocation={setSearchOverrideLocation}
+          highlightedPostId={activePostId}
+          sheetState={sheetState}
           onSelectNeighborhood={(id) => {
             setActiveNhId(id)
             setViewMode('neighborhood')
@@ -881,15 +1247,19 @@ export default function FluidLayoutContainer({
           {/* Toggle Close / Expand button */}
           <button
             onClick={() => {
-              setSheetState(prev => prev === 'collapsed' ? 'half' : 'collapsed')
+              setSheetState(prev => {
+                if (prev === 'collapsed') return 'half'
+                if (prev === 'half') return 'expanded'
+                return 'half'
+              })
             }}
             className="absolute right-5 top-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full p-1.5 transition-all text-xs flex items-center justify-center border border-slate-700 shadow-md"
             aria-label="Toggle drawer"
           >
-            {sheetState === 'collapsed' ? (
-              <ChevronUp className="w-3.5 h-3.5 text-[#00f5d4]" />
+            {sheetState === 'expanded' ? (
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hover:text-white" />
             ) : (
-              <X className="w-3.5 h-3.5 text-slate-400 hover:text-white" />
+              <ChevronUp className="w-3.5 h-3.5 text-[#00f5d4]" />
             )}
           </button>
         </div>
@@ -1304,27 +1674,50 @@ export default function FluidLayoutContainer({
                   </div>
 
                   {/* Attachment Media rendering */}
-                  {post.mediaUrl && post.mediaUrl.trim() !== '' && (
-                    <div 
-                      className="relative w-full max-h-80 flex items-center justify-center bg-black/10 rounded-md overflow-hidden mt-3"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {isVideoUrl(post.mediaUrl) ? (
-                        <video
-                          src={post.mediaUrl}
-                          controls
-                          className="w-full h-full max-h-80 object-contain"
-                        />
-                      ) : (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={post.mediaUrl}
-                          alt="Attachment"
-                          className="w-full h-full max-h-80 object-contain"
-                        />
-                      )}
-                    </div>
-                  )}
+                  {post.mediaUrl && post.mediaUrl.trim() !== '' && (() => {
+                    const ytId = getYouTubeId(post.mediaUrl)
+                    if (ytId) {
+                      const isShort = post.mediaUrl.includes('shorts/')
+                      return (
+                        <div 
+                          className={`relative w-full overflow-hidden border border-slate-800 bg-black mt-3 mx-auto ${
+                            isShort ? 'aspect-[9/16] max-w-[270px] rounded-3xl shadow-xl' : 'aspect-video rounded-2xl'
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <iframe
+                            src={`https://www.youtube.com/embed/${ytId}`}
+                            className="absolute top-0 left-0 w-full h-full border-0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowFullScreen
+                            title="YouTube video player"
+                          />
+                        </div>
+                      )
+                    }
+
+                    return (
+                      <div 
+                        className="relative w-full max-h-80 flex items-center justify-center bg-black/10 rounded-md overflow-hidden mt-3"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {isVideoUrl(post.mediaUrl) ? (
+                          <video
+                            src={post.mediaUrl}
+                            controls
+                            className="w-full h-full max-h-80 object-contain"
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={post.mediaUrl}
+                            alt="Attachment"
+                            className="w-full h-full max-h-80 object-contain"
+                          />
+                        )}
+                      </div>
+                    )
+                  })()}
 
                   {/* Directions Action */}
                   {isExpanded && (post.isBeacon || post.userRole === 'business' || post.userType === 'business' || post.isProposal) && (
@@ -1451,6 +1844,211 @@ export default function FluidLayoutContainer({
           </div>
         </div>
       </div>
+
+      <Suspense fallback={null}>
+        <QRRedirectDetector onDetect={setIsQrVisitor} />
+      </Suspense>
+
+      {/* ========================================================================= */}
+      {/* 1. THE "QR LANDING BRIDGE" WELCOME BANNER                                */}
+      {/* ========================================================================= */}
+      {(showQRWelcome || isQrVisitor) && (
+        <div className="fixed top-4 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-xl z-[60] pointer-events-auto bg-[#1c2541]/95 border-2 border-[#00f5d4]/40 backdrop-blur-md px-4 py-3.5 rounded-2xl shadow-2xl flex items-start justify-between gap-3 text-white transition-all animate-fadeIn duration-350">
+          <div className="flex gap-2.5">
+            <span className="text-xl animate-bounce">✨</span>
+            <div>
+              <h4 className="text-xs font-black text-[#00f5d4] uppercase tracking-wider">Wilmington Welcome!</h4>
+              <p className="text-[11px] text-slate-200 font-semibold leading-relaxed mt-1">
+                Welcome Wilmington Local! 302 built, no algorithms. Pick a profile type below to explore, or start posting right away.
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => { setShowQRWelcome(false); setIsQrVisitor(false); }}
+            className="p-1 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            aria-label="Dismiss welcome banner"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. SMART PWA INSTALLATION & "OPEN APP" OVERLAYS                         */}
+      {/* ========================================================================= */}
+      
+      {/* CONDITION A: Standard Browser Installable */}
+      {isInstallable && !isInstalled && !dismissedInstall && (
+        <div className="fixed top-20 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-xl z-55 pointer-events-auto bg-[#1c2541]/95 border border-[#00f5d4]/30 backdrop-blur-md px-4 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 text-white transition-all animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <span className="text-lg">📲</span>
+            <div>
+              <h4 className="text-[11px] font-black uppercase text-white tracking-wider">Install Sounding Board PWA</h4>
+              <p className="text-[9px] text-slate-300">Get the full local experience on your home screen.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={() => {
+                sessionStorage.setItem('dismissed-pwa-install', 'true')
+                setDismissedInstall(true)
+              }}
+              className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
+            >
+              Later
+            </button>
+            <button 
+              onClick={install}
+              className="px-3.5 py-1.5 bg-[#00f5d4] hover:bg-[#00e1c2] text-[#0b132b] font-black rounded-xl text-[10px] uppercase cursor-pointer shadow-lg shadow-[#00f5d4]/15 hover:scale-105 active:scale-95 transition-all"
+            >
+              Install
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* CONDITION B: iOS Safari mobile tooltip helper */}
+      {isIOS && isSafari && !isInstalled && !dismissedIOS && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[90%] max-w-sm z-55 pointer-events-auto bg-[#1c2541]/95 border-2 border-[#d90429]/40 backdrop-blur-md p-3.5 rounded-2xl shadow-2xl flex flex-col gap-2.5 text-white animate-fadeIn">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex gap-2.5">
+              <span className="text-base animate-pulse">📱</span>
+              <div>
+                <h4 className="text-[11px] font-black uppercase text-white tracking-wider">Install Sounding Board</h4>
+                <p className="text-[9px] text-slate-200 mt-1 leading-relaxed">
+                  Install this PWA on your iPhone: tap the <strong className="text-[#00f5d4]">Share icon</strong> in the Safari bottom bar, then select <strong className="text-[#00f5d4]">"Add to Home Screen"</strong>.
+                </p>
+              </div>
+            </div>
+            <button 
+              onClick={() => {
+                sessionStorage.setItem('dismissed-pwa-ios', 'true')
+                setDismissedIOS(true)
+              }}
+              className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-full cursor-pointer transition-colors"
+              aria-label="Dismiss tooltip"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          {/* Tiny down arrow pointing down to Safari controls */}
+          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-[#1c2541] border-r border-b border-[#d90429]/40 rotate-45" />
+        </div>
+      )}
+
+      {/* CONDITION C: Already installed but opened in a standard browser */}
+      {(() => {
+        const wasInstalled = typeof window !== 'undefined' && localStorage.getItem('pwa-installed') === 'true'
+        if (wasInstalled && !isInstalled && !dismissedOpenApp) {
+          return (
+            <div className="fixed top-20 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-xl z-55 pointer-events-auto bg-[#1c2541]/95 border border-[#d90429]/30 backdrop-blur-md px-4 py-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 text-white transition-all animate-fadeIn">
+              <div className="flex items-center gap-2.5">
+                <span className="text-lg">⚡</span>
+                <div>
+                  <h4 className="text-[11px] font-black uppercase text-white tracking-wider">Open in Standalone App</h4>
+                  <p className="text-[9px] text-slate-300">Launch the installed Sounding Board app for a native experience.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    sessionStorage.setItem('dismissed-pwa-open', 'true')
+                    setDismissedOpenApp(true)
+                  }}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-750 text-slate-400 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-wider cursor-pointer transition-colors"
+                >
+                  Later
+                </button>
+                <a 
+                  href="/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    sessionStorage.setItem('dismissed-pwa-open', 'true')
+                    setDismissedOpenApp(true)
+                  }}
+                  className="px-3.5 py-1.5 bg-[#d90429] hover:bg-[#b00320] text-white font-black rounded-xl text-[10px] uppercase cursor-pointer shadow-lg shadow-[#d90429]/15 hover:scale-105 active:scale-95 transition-all text-center"
+                >
+                  Launch App
+                </a>
+              </div>
+            </div>
+          )
+        }
+        return null
+      })()}
+
+      {/* ========================================================================= */}
+      {/* 3. NON-INVASIVE BETA FEEDBACK COMPONENT                                  */}
+      {/* ========================================================================= */}
+      
+      {/* Sticky speech bubble FAB */}
+      {!showFeedbackCard && (
+        <button
+          onClick={() => {
+            setShowFeedbackCard(true)
+            setFeedbackSuccess(false)
+            setFeedbackError('')
+          }}
+          className="fixed bottom-24 right-4 z-45 w-12 h-12 rounded-full bg-[#d90429] hover:bg-[#b00320] border border-[#d90429]/50 shadow-2xl flex items-center justify-center text-white transition-all active:scale-90 hover:scale-105 pointer-events-auto cursor-pointer"
+          aria-label="Submit beta feedback"
+        >
+          <MessageSquare className="w-5 h-5 text-white" />
+        </button>
+      )}
+
+      {/* Lightweight feedback input card */}
+      {showFeedbackCard && (
+        <div className="fixed bottom-24 right-4 z-[70] w-80 bg-[#1c2541]/95 border border-[#d90429]/40 backdrop-blur-md p-4.5 rounded-3xl shadow-2xl animate-fadeIn pointer-events-auto flex flex-col gap-3">
+          <div className="flex justify-between items-center">
+            <h4 className="text-xs font-black text-[#00f5d4] uppercase tracking-wider flex items-center gap-1.5">
+              <span>💬</span> Sounding Feedback
+            </h4>
+            <button 
+              onClick={() => setShowFeedbackCard(false)}
+              className="p-1 rounded-full hover:bg-slate-800/80 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              aria-label="Close feedback card"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          
+          {feedbackSuccess ? (
+            <div className="text-[11px] text-emerald-400 bg-emerald-950/20 border border-emerald-500/10 p-4 rounded-2xl font-bold text-center leading-relaxed">
+              ✨ Sound waves received! Your feedback has been saved directly to Neon Postgres storage.
+            </div>
+          ) : (
+            <form onSubmit={handleFeedbackSubmit} className="flex flex-col gap-3.5">
+              <div className="flex flex-col gap-1">
+                <label className="text-[9px] text-slate-400 font-extrabold uppercase tracking-wide">What can we improve?</label>
+                <textarea
+                  placeholder="Bug reports, feature requests, local ideas welcome..."
+                  value={feedbackText}
+                  onChange={(e) => setFeedbackText(e.target.value)}
+                  rows={3}
+                  maxLength={1000}
+                  className="w-full bg-[#0b132b] border border-slate-700/50 rounded-xl p-2.5 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-[#d90429] resize-none"
+                  required
+                />
+              </div>
+              
+              {feedbackError && (
+                <p className="text-[10px] text-red-400 bg-red-950/20 border border-red-500/10 p-2 rounded-xl font-medium">
+                  ⚠️ {feedbackError}
+                </p>
+              )}
+              
+              <button
+                type="submit"
+                disabled={submittingFeedback || !feedbackText.trim()}
+                className="w-full py-2.5 bg-[#d90429] hover:bg-[#b00320] text-white font-black rounded-xl text-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {submittingFeedback ? 'Submitting feedback...' : 'Submit Feedback'}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
     </div>
   )
 }

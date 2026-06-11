@@ -99,6 +99,9 @@ export const posts = pgTable('posts', {
   pinnedDistrictId: integer('pinned_district_id').references(() => planningDistricts.id),
   pinnedCouncilDistrictId: integer('pinned_council_district_id').references(() => councilDistricts.id),
   anonymousAuthorName: text('anonymous_author_name'),
+  radiusMeters: integer('radius_meters').default(800).notNull(),
+  shadowbanned: boolean('shadowbanned').default(false).notNull(),
+  hitCityWall: boolean('hit_city_wall').default(false).notNull(),
 })
 
 // Drizzle relations
@@ -150,6 +153,7 @@ export const postReactions = pgTable('post_reactions', {
   userId: integer('user_id').references(() => users.id).notNull(),
   type: text('type', { enum: ['like', 'second', 'dislike', 'object', 'love_local', 'second_this', 'not_for_me', 'bad_for_community'] }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  interactionWeight: doublePrecision('interaction_weight').default(1.0).notNull(),
 }, (table) => [
   unique('post_user_unique').on(table.postId, table.userId)
 ])
@@ -165,6 +169,7 @@ export const civicVotes = pgTable('civic_votes', {
   userId: integer('user_id').references(() => users.id).notNull(),
   vote: text('vote', { enum: ['agree', 'object'] }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
+  interactionWeight: doublePrecision('interaction_weight').default(1.0).notNull(),
 }, (table) => [
   unique('civic_vote_user_unique').on(table.postId, table.userId)
 ])
@@ -173,3 +178,9 @@ export const civicVotesRelations = relations(civicVotes, ({ one }) => ({
   post: one(posts, { fields: [civicVotes.postId], references: [posts.id] }),
   user: one(users, { fields: [civicVotes.userId], references: [users.id] }),
 }))
+
+export const betaFeedback = pgTable('beta_feedback', {
+  id: serial('id').primaryKey(),
+  content: text('content').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+})

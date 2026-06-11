@@ -23,6 +23,9 @@ interface LeafletMapProps {
   onSelectCouncilDistrict: (id: number) => void
   onSelectHistoricDistrict: (id: number) => void
   onCameraChange: (center: { lng: number; lat: number }, zoom: number) => void
+  setSearchOverrideLocation?: (loc: { lat: number; lng: number; type: string } | null) => void
+  highlightedPostId?: string | number | null
+  sheetState?: 'collapsed' | 'half' | 'expanded'
 }
 
 export default function LeafletMap({
@@ -43,7 +46,10 @@ export default function LeafletMap({
   onSelectNeighborhood,
   onSelectCouncilDistrict,
   onSelectHistoricDistrict,
-  onCameraChange
+  onCameraChange,
+  setSearchOverrideLocation,
+  highlightedPostId,
+  sheetState
 }: LeafletMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -124,7 +130,30 @@ export default function LeafletMap({
     const currentZoom = map.getZoom()
     const currentCenter = map.getCenter()
 
-    const centerDiff = Math.abs(currentCenter.lat - center.lat) + Math.abs(currentCenter.lng - center.lng)
+    // Calculate dynamic padding offset based on sheetState to center markers in the visible map area
+    let offsetPixels = 0
+    if (typeof window !== 'undefined') {
+      if (sheetState === 'half') {
+        offsetPixels = window.innerHeight / 4
+      } else if (sheetState === 'collapsed') {
+        offsetPixels = 65
+      }
+    }
+
+    let finalCenter: [number, number] = [center.lat, center.lng]
+    if (offsetPixels > 0) {
+      try {
+        const targetLatLng = L.latLng(center.lat, center.lng)
+        const targetPoint = map.project(targetLatLng, zoom)
+        const offsetPoint = L.point(targetPoint.x, targetPoint.y + offsetPixels)
+        const offsetLatLng = map.unproject(offsetPoint, zoom)
+        finalCenter = [offsetLatLng.lat, offsetLatLng.lng]
+      } catch (e) {
+        console.warn('Offset calculation failed', e)
+      }
+    }
+
+    const centerDiff = Math.abs(currentCenter.lat - finalCenter[0]) + Math.abs(currentCenter.lng - finalCenter[1])
     const zoomDiff = Math.abs(currentZoom - zoom)
 
     // Skip update if the map camera is already at the target position
@@ -133,14 +162,24 @@ export default function LeafletMap({
     }
 
     isUpdatingFromPropsRef.current = true
-    map.setView([center.lat, center.lng], zoom, { animate: true })
+
+    // Use direct setView for user walking/GPS centering, and flyTo for searches/selections
+    const isWalkingCentering = viewMode === 'walking' && userLocation &&
+      Math.abs(center.lat - userLocation.lat) < 0.0001 &&
+      Math.abs(center.lng - userLocation.lng) < 0.0001
+
+    if (isWalkingCentering) {
+      map.setView([center.lat, center.lng], zoom, { animate: false })
+    } else {
+      map.flyTo(finalCenter, zoom, { animate: true })
+    }
     
     const timer = setTimeout(() => {
       isUpdatingFromPropsRef.current = false
     }, 500)
 
     return () => clearTimeout(timer)
-  }, [cameraTrigger])
+  }, [cameraTrigger, sheetState])
 
   // Render Boundaries & Polygons
   useEffect(() => {
@@ -229,6 +268,11 @@ export default function LeafletMap({
             L.DomEvent.stopPropagation(e)
             if (activeMapLayer === 'neighborhood') {
               onSelectNeighborhood(feature.properties.id)
+              const lat = e.latlng.lat
+              const lng = e.latlng.lng
+              if (setSearchOverrideLocation) {
+                setSearchOverrideLocation({ lat, lng, type: 'neighborhood' })
+              }
             } else if (activeMapLayer === 'council') {
               onSelectCouncilDistrict(feature.properties.id)
             } else if (activeMapLayer === 'historic') {
@@ -302,10 +346,25 @@ export default function LeafletMap({
       walkingCircleRef.current = null
     }
 
-    // Only render soft pulsating blue radial ring (0.5-mile / 800m) in walking mode
-    if (viewMode === 'walking' && userLocation && typeof userLocation.lat === 'number' && typeof userLocation.lng === 'number' && !isNaN(userLocation.lat) && !isNaN(userLocation.lng)) {
-      const circle = L.circle([userLocation.lat, userLocation.lng], {
-        radius: 800, // 0.5 miles is approx 800 meters
+    let circleCenter: [number, number] | null = null
+    let circleRadius = 300 // default proximity baseline floor
+
+    if (highlightedPostId && posts && posts.length > 0) {
+      const activePost = posts.find(p => String(p.id) === String(highlightedPostId))
+      if (activePost && typeof activePost.latitude === 'number' && typeof activePost.longitude === 'number') {
+        circleCenter = [activePost.latitude, activePost.longitude]
+        circleRadius = activePost.radius_meters ?? activePost.radiusMeters ?? 300
+      }
+    }
+
+    if (!circleCenter && userLocation && typeof userLocation.lat === 'number' && typeof userLocation.lng === 'number' && !isNaN(userLocation.lat) && !isNaN(userLocation.lng)) {
+      circleCenter = [userLocation.lat, userLocation.lng]
+    }
+
+    // Render walking circle if viewMode is walking OR if we are displaying a highlighted post circle
+    if (circleCenter && (viewMode === 'walking' || highlightedPostId)) {
+      const circle = L.circle(circleCenter, {
+        radius: circleRadius, // dynamic radius: matches post's radius_meters or 300m baseline
         color: '#00f5d4', // Neon Cyan color matching design theme
         weight: 1.5,
         fillColor: '#00f5d4',
@@ -321,7 +380,7 @@ export default function LeafletMap({
         mapRef.current.removeLayer(walkingCircleRef.current)
       }
     }
-  }, [viewMode, userLocation])
+  }, [viewMode, userLocation, highlightedPostId, posts])
 
   // Render User Location Pin Marker
   useEffect(() => {
@@ -439,7 +498,11 @@ export default function LeafletMap({
         opacity: 0.98
       })
 
-      marker.on('click', () => {
+      marker.on('click', (e: any) => {
+        L.DomEvent.stopPropagation(e)
+        if (setSearchOverrideLocation) {
+          setSearchOverrideLocation({ lat, lng, type: 'neighborhood' })
+        }
         const isApple = typeof navigator !== 'undefined' && /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent);
         const encodedLabel = encodeURIComponent(beacon.title);
         let url = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;

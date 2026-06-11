@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { Outfit, Inter } from 'next/font/google'
 import './globals.css'
 import PWARegister from '@/components/PWARegister'
-import { Analytics } from '@vercel/analytics/next'
+import { Analytics } from '@vercel/analytics/react'
 
 const outfit = Outfit({
   subsets: ['latin'],

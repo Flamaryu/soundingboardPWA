@@ -36,6 +36,254 @@ function writeMockDb(data: any) {
   }
 }
 
+import { getHaversineDistance, getNeighborhoodCentroid } from '../../db/spatialQueries'
+import { computeProximity } from '../../utils/proximity'
+
+async function calculateInteractionWeight(
+  postId: number,
+  userId: number,
+  actorLat?: number,
+  actorLng?: number
+): Promise<number> {
+  let postLat = 39.742
+  let postLng = -75.548
+
+  // 1. Get post location
+  if (isMockDb()) {
+    const mockDb = readMockDb()
+    const post = mockDb.posts.find((p: any) => p.id === postId)
+    if (post) {
+      const nh = mockDb.neighborhoods.find((n: any) => n.id === post.neighborhoodId)
+      if (nh && nh.boundary && nh.boundary.coordinates) {
+        const centroid = getNeighborhoodCentroid(nh.boundary.coordinates)
+        postLat = centroid.lat
+        postLng = centroid.lng
+      }
+    }
+  } else {
+    try {
+      const postRow = await db
+        .select({
+          neighborhoodId: schema.posts.neighborhoodId,
+          latitude: schema.users.latitude,
+          longitude: schema.users.longitude
+        })
+        .from(schema.posts)
+        .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
+        .where(eq(schema.posts.id, postId))
+        .limit(1)
+      
+      if (postRow.length > 0) {
+        if (typeof postRow[0].latitude === 'number' && typeof postRow[0].longitude === 'number') {
+          postLat = postRow[0].latitude
+          postLng = postRow[0].longitude
+        } else {
+          const nhCentroid = await db.execute(sql`
+            SELECT ST_X(ST_Centroid(boundary::geometry)) as lng, ST_Y(ST_Centroid(boundary::geometry)) as lat 
+            FROM neighborhoods WHERE id = ${postRow[0].neighborhoodId} LIMIT 1
+          `)
+          if (nhCentroid.rows.length > 0 && nhCentroid.rows[0].lng !== null) {
+            postLng = Number(nhCentroid.rows[0].lng)
+            postLat = Number(nhCentroid.rows[0].lat)
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to query post location, using default center fallback:", err)
+    }
+  }
+
+  // 2. Get actor location
+  let actLat = actorLat
+  let actLng = actorLng
+
+  if (typeof actLat !== 'number' || typeof actLng !== 'number') {
+    if (isMockDb()) {
+      const mockDb = readMockDb()
+      const user = mockDb.users.find((u: any) => u.id === userId)
+      if (user) {
+        if (typeof user.latitude === 'number' && typeof user.longitude === 'number') {
+          actLat = user.latitude
+          actLng = user.longitude
+        } else {
+          const nh = mockDb.neighborhoods.find((n: any) => n.id === user.neighborhoodId)
+          if (nh && nh.boundary && nh.boundary.coordinates) {
+            const centroid = getNeighborhoodCentroid(nh.boundary.coordinates)
+            actLat = centroid.lat
+            actLng = centroid.lng
+          }
+        }
+      }
+    } else {
+      try {
+        const userRow = await db
+          .select({
+            latitude: schema.users.latitude,
+            longitude: schema.users.longitude,
+            neighborhoodId: schema.users.neighborhoodId
+          })
+          .from(schema.users)
+          .where(eq(schema.users.id, userId))
+          .limit(1)
+        
+        if (userRow.length > 0) {
+          if (typeof userRow[0].latitude === 'number' && typeof userRow[0].longitude === 'number') {
+            actLat = userRow[0].latitude
+            actLng = userRow[0].longitude
+          } else if (userRow[0].neighborhoodId) {
+            const nhCentroid = await db.execute(sql`
+              SELECT ST_X(ST_Centroid(boundary::geometry)) as lng, ST_Y(ST_Centroid(boundary::geometry)) as lat 
+              FROM neighborhoods WHERE id = ${userRow[0].neighborhoodId} LIMIT 1
+            `)
+            if (nhCentroid.rows.length > 0 && nhCentroid.rows[0].lng !== null) {
+              actLng = Number(nhCentroid.rows[0].lng)
+              actLat = Number(nhCentroid.rows[0].lat)
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to query user location fallback:", err)
+      }
+    }
+  }
+
+  // 3. Distance check and tier weights mapping
+  if (typeof actLat === 'number' && typeof actLng === 'number') {
+    const distance = getHaversineDistance(actLng, actLat, postLng, postLat)
+    if (distance < 500) {
+      return 1.0
+    } else if (distance <= 2500) {
+      return 0.6
+    } else {
+      return 0.2
+    }
+  }
+
+  return 1.0
+}
+
+function recalculatePostProximityInMockDb(postId: number, mockDb: any) {
+  const post = mockDb.posts.find((p: any) => p.id === postId)
+  if (!post) return
+
+  const reactions = mockDb.postReactions || []
+  const votes = mockDb.civicVotes || []
+  const postReactions = reactions.filter((r: any) => r.postId === postId)
+  const postVotes = votes.filter((v: any) => v.postId === postId)
+
+  const likesWeight = postReactions
+    .filter((r: any) => r.type === 'love_local' || r.type === 'like')
+    .reduce((sum: number, r: any) => sum + (r.interactionWeight ?? 1.0), 0)
+
+  const secondsWeight = [
+    ...postReactions.filter((r: any) => r.type === 'second_this' || r.type === 'second'),
+    ...postVotes.filter((v: any) => v.vote === 'agree')
+  ].reduce((sum: number, x: any) => sum + (x.interactionWeight ?? 1.0), 0)
+
+  const dislikesWeight = postReactions
+    .filter((r: any) => r.type === 'not_for_me' || r.type === 'dislike')
+    .reduce((sum: number, r: any) => sum + (r.interactionWeight ?? 1.0), 0)
+
+  const objectionsWeight = postReactions
+    .filter((r: any) => r.type === 'bad_for_community' || r.type === 'object')
+    .reduce((sum: number, r: any) => sum + (r.interactionWeight ?? 1.0), 0)
+
+  const rawObjectionsCount = [
+    ...postReactions.filter((r: any) => r.type === 'bad_for_community' || r.type === 'object'),
+    ...postVotes.filter((v: any) => v.vote === 'object')
+  ].length
+
+  post.likes = postReactions.filter((r: any) => r.type === 'love_local' || r.type === 'like').length
+  post.seconds = [
+    ...postReactions.filter((r: any) => r.type === 'second_this' || r.type === 'second'),
+    ...postVotes.filter((v: any) => v.vote === 'agree')
+  ].length
+  post.dislikes = postReactions.filter((r: any) => r.type === 'not_for_me' || r.type === 'dislike').length
+  post.objections = [
+    ...postReactions.filter((r: any) => r.type === 'bad_for_community' || r.type === 'object'),
+    ...postVotes.filter((v: any) => v.vote === 'object')
+  ].length
+
+  const proximity = computeProximity({
+    likes: likesWeight,
+    seconds: secondsWeight,
+    dislikes: dislikesWeight,
+    objections: objectionsWeight,
+    rawObjections: rawObjectionsCount,
+    createdAt: post.createdAt
+  })
+
+  post.radiusMeters = proximity.radiusMeters
+  post.shadowbanned = proximity.shadowbanned
+  post.hitCityWall = proximity.hitCityWall
+}
+
+async function recalculatePostProximityInPostgres(postId: number) {
+  const reactions = await db.select().from(schema.postReactions).where(eq(schema.postReactions.postId, postId))
+  const votes = await db.select().from(schema.civicVotes).where(eq(schema.civicVotes.postId, postId))
+
+  const likesWeight = reactions
+    .filter((r: any) => r.type === 'love_local' || r.type === 'like')
+    .reduce((sum: number, r: any) => sum + Number(r.interactionWeight), 0)
+
+  const secondsWeight = [
+    ...reactions.filter((r: any) => r.type === 'second_this' || r.type === 'second'),
+    ...votes.filter((v: any) => v.vote === 'agree')
+  ].reduce((sum: number, x: any) => sum + Number(x.interactionWeight), 0)
+
+  const dislikesWeight = reactions
+    .filter((r: any) => r.type === 'not_for_me' || r.type === 'dislike')
+    .reduce((sum: number, r: any) => sum + Number(r.interactionWeight), 0)
+
+  const objectionsWeight = reactions
+    .filter((r: any) => r.type === 'bad_for_community' || r.type === 'object')
+    .reduce((sum: number, r: any) => sum + Number(r.interactionWeight), 0)
+
+  const rawObjectionsCount = [
+    ...reactions.filter((r: any) => r.type === 'bad_for_community' || r.type === 'object'),
+    ...votes.filter((v: any) => v.vote === 'object')
+  ].length
+
+  const likesCount = reactions.filter((r: any) => r.type === 'love_local' || r.type === 'like').length
+  const secondsCount = [
+    ...reactions.filter((r: any) => r.type === 'second_this' || r.type === 'second'),
+    ...votes.filter((v: any) => v.vote === 'agree')
+  ].length
+  const dislikesCount = reactions.filter((r: any) => r.type === 'not_for_me' || r.type === 'dislike').length
+  const objectionsCount = [
+    ...reactions.filter((r: any) => r.type === 'bad_for_community' || r.type === 'object'),
+    ...votes.filter((v: any) => v.vote === 'object')
+  ].length
+
+  const postRows = await db.select({ createdAt: schema.posts.createdAt }).from(schema.posts).where(eq(schema.posts.id, postId)).limit(1)
+  if (postRows.length === 0) return null
+
+  const proximity = computeProximity({
+    likes: likesWeight,
+    seconds: secondsWeight,
+    dislikes: dislikesWeight,
+    objections: objectionsWeight,
+    rawObjections: rawObjectionsCount,
+    createdAt: postRows[0].createdAt
+  })
+
+  const rows = await db
+    .update(schema.posts)
+    .set({
+      likes: likesCount,
+      seconds: secondsCount,
+      dislikes: dislikesCount,
+      objections: objectionsCount,
+      radiusMeters: proximity.radiusMeters,
+      shadowbanned: proximity.shadowbanned,
+      hitCityWall: proximity.hitCityWall
+    })
+    .where(eq(schema.posts.id, postId))
+    .returning()
+
+  return rows[0]
+}
+
 // Get feed posts based on active user context and zoom level
 // radiusLevel: 1 = Neighborhood, 2 = District, 3 = City
 export async function getFeedPosts(
@@ -56,16 +304,16 @@ export async function getFeedPosts(
 
     if (radiusLevel === 1) {
       // Level 1: Exact neighborhood match
-      filteredPosts = mockDb.posts.filter((p: any) => p.neighborhoodId === neighborhoodId)
+      filteredPosts = mockDb.posts.filter((p: any) => p.neighborhoodId === neighborhoodId && !p.shadowbanned)
     } else if (radiusLevel === 2) {
       // Level 2: District-wide match
       const siblingNhIds = mockDb.neighborhoods
         .filter((n: any) => n.districtId === activeNh.districtId)
         .map((n: any) => n.id)
-      filteredPosts = mockDb.posts.filter((p: any) => siblingNhIds.includes(p.neighborhoodId))
+      filteredPosts = mockDb.posts.filter((p: any) => siblingNhIds.includes(p.neighborhoodId) && !p.shadowbanned)
     } else {
       // Level 3: City-wide (all posts)
-      filteredPosts = mockDb.posts
+      filteredPosts = mockDb.posts.filter((p: any) => !p.shadowbanned)
     }
 
     // Attach user information and active user's reaction to mock posts
@@ -133,7 +381,7 @@ export async function getFeedPosts(
         .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
         .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
         .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
-        .where(eq(schema.posts.neighborhoodId, neighborhoodId))
+        .where(and(eq(schema.posts.neighborhoodId, neighborhoodId), eq(schema.posts.shadowbanned, false)))
         .orderBy(sql`created_at DESC`)
       
       return rows.map((r: any) => ({
@@ -194,7 +442,7 @@ export async function getFeedPosts(
         .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
         .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
         .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
-        .where(inArray(schema.posts.neighborhoodId, siblingIds))
+        .where(and(inArray(schema.posts.neighborhoodId, siblingIds), eq(schema.posts.shadowbanned, false)))
         .orderBy(sql`created_at DESC`)
       
       return rows.map((r: any) => ({
@@ -237,6 +485,7 @@ export async function getFeedPosts(
         .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
         .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
         .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
+        .where(eq(schema.posts.shadowbanned, false))
         .orderBy(sql`created_at DESC`)
       
       return rows.map((r: any) => ({
@@ -255,14 +504,14 @@ export async function getFeedPosts(
     if (!activeNh) return []
     let filteredPosts = []
     if (radiusLevel === 1) {
-      filteredPosts = mockDb.posts.filter((p: any) => p.neighborhoodId === neighborhoodId)
+      filteredPosts = mockDb.posts.filter((p: any) => p.neighborhoodId === neighborhoodId && !p.shadowbanned)
     } else if (radiusLevel === 2) {
       const siblingNhIds = mockDb.neighborhoods
         .filter((n: any) => n.districtId === activeNh.districtId)
         .map((n: any) => n.id)
-      filteredPosts = mockDb.posts.filter((p: any) => siblingNhIds.includes(p.neighborhoodId))
+      filteredPosts = mockDb.posts.filter((p: any) => siblingNhIds.includes(p.neighborhoodId) && !p.shadowbanned)
     } else {
-      filteredPosts = mockDb.posts
+      filteredPosts = mockDb.posts.filter((p: any) => !p.shadowbanned)
     }
     return filteredPosts.map((post: any) => {
       const user = mockDb.users.find((u: any) => u.id === post.userId)
@@ -309,6 +558,49 @@ export async function createPost(data: {
 }) {
   const createdAt = new Date().toISOString()
   
+  // Sandbox Mode Interception
+  const isSandbox = process.env.NEXT_PUBLIC_ENABLE_SANDBOX_MODE === 'true'
+  if (isSandbox) {
+    try {
+      const { Redis } = await import('@upstash/redis')
+      const hasUpstashEnv = !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN
+      if (hasUpstashEnv) {
+        const redis = Redis.fromEnv()
+        const randNum = Math.floor(Math.random() * 9000) + 1000
+        const anonymousAuthorName = `citizen${randNum}`
+        const newPost = {
+          id: Math.floor(Math.random() * 1000000),
+          title: data.title,
+          content: data.content,
+          type: data.type,
+          mediaUrl: data.mediaUrl || '',
+          userType: data.isAnonymous ? 'citizen' : 'citizen',
+          userId: data.userId,
+          neighborhoodId: data.neighborhoodId,
+          createdAt: new Date().toISOString(),
+          isProposal: data.isProposal ?? false,
+          likes: 0,
+          seconds: 0,
+          dislikes: 0,
+          objections: 0,
+          userName: data.isAnonymous ? anonymousAuthorName : 'Sandbox User',
+          userRole: 'citizen',
+          neighborhoodName: 'Wilmington Sandbox',
+          userReaction: null,
+          isBeacon: data.isBeacon ?? false,
+          isPinned: data.isPinned ?? false
+        }
+        await redis.lpush('sandbox:posts', JSON.stringify(newPost))
+        revalidatePath('/')
+        return { success: true, post: newPost }
+      } else {
+        console.warn('⚠️ Upstash Redis environment variables not configured. Falling back to default feed.')
+      }
+    } catch (err: any) {
+      console.error('Failed to create post in Upstash Redis:', err)
+    }
+  }
+
   if (isMockDb()) {
     const mockDb = readMockDb()
     if (!mockDb) return { success: false, error: 'Database not initialized' }
@@ -350,6 +642,9 @@ export async function createPost(data: {
       seconds: 0,
       dislikes: 0,
       objections: 0,
+      radiusMeters: 300,
+      shadowbanned: false,
+      hitCityWall: false,
       councilDistrictId: data.councilDistrictId || null,
       historicDistrictId: data.historicDistrictId || null,
       isBeacon: data.isBeacon ?? false,
@@ -416,6 +711,9 @@ export async function createPost(data: {
         seconds: 0,
         dislikes: 0,
         objections: 0,
+        radiusMeters: 300,
+        shadowbanned: false,
+        hitCityWall: false,
         councilDistrictId: data.councilDistrictId || null,
         historicDistrictId: data.historicDistrictId || null,
         isBeacon: data.isBeacon ?? false,
@@ -466,6 +764,9 @@ export async function createPost(data: {
       seconds: 0,
       dislikes: 0,
       objections: 0,
+      radiusMeters: 300,
+      shadowbanned: false,
+      hitCityWall: false,
       councilDistrictId: data.councilDistrictId || null,
       historicDistrictId: data.historicDistrictId || null,
       isBeacon: data.isBeacon ?? false,
@@ -558,7 +859,9 @@ export async function getMockUsers() {
 export async function reactToPost(
   postId: number,
   userId: number,
-  reactionType: 'like' | 'second' | 'dislike' | 'object' | 'love_local' | 'second_this' | 'not_for_me' | 'bad_for_community'
+  reactionType: 'like' | 'second' | 'dislike' | 'object' | 'love_local' | 'second_this' | 'not_for_me' | 'bad_for_community',
+  actorLat?: number,
+  actorLng?: number
 ) {
   const mapReactionToCol = (type: string): 'likes' | 'seconds' | 'dislikes' | 'objections' => {
     if (type === 'love_local' || type === 'like') return 'likes'
@@ -568,6 +871,7 @@ export async function reactToPost(
   }
 
   const col = mapReactionToCol(reactionType)
+  const weight = await calculateInteractionWeight(postId, userId, actorLat, actorLng)
 
   if (isMockDb()) {
     const mockDb = readMockDb()
@@ -586,33 +890,21 @@ export async function reactToPost(
     if (existingIndex === -1) {
       // 1. Create new reaction
       const newId = mockDb.postReactions.length > 0 ? Math.max(...mockDb.postReactions.map((r: any) => r.id)) + 1 : 1
-      mockDb.postReactions.push({ id: newId, postId, userId, type: reactionType })
-      
-      // Increment counter
-      post[col] = (post[col] || 0) + 1
+      mockDb.postReactions.push({ id: newId, postId, userId, type: reactionType, interactionWeight: weight })
     } else {
       const oldReaction = mockDb.postReactions[existingIndex]
       
       if (oldReaction.type === reactionType) {
         // 2. Undo/untoggle reaction
         mockDb.postReactions.splice(existingIndex, 1)
-        
-        // Decrement counter
-        post[col] = Math.max(0, (post[col] || 0) - 1)
       } else {
         // 3. Swap reaction
-        const oldType = oldReaction.type
         oldReaction.type = reactionType
-        const oldCol = mapReactionToCol(oldType)
-        
-        // Decrement old counter
-        post[oldCol] = Math.max(0, (post[oldCol] || 0) - 1)
-        
-        // Increment new counter
-        post[col] = (post[col] || 0) + 1
+        oldReaction.interactionWeight = weight
       }
     }
 
+    recalculatePostProximityInMockDb(postId, mockDb)
     writeMockDb(mockDb)
     revalidatePath('/')
     return { success: true, post }
@@ -627,80 +919,35 @@ export async function reactToPost(
       .where(and(eq(schema.postReactions.postId, postId), eq(schema.postReactions.userId, userId)))
       .limit(1)
 
-    let updatedPost = null
-
     if (existing.length === 0) {
       // 1. Create reaction record
-      await db.insert(schema.postReactions).values({ postId, userId, type: reactionType })
-      
-      // Increment target counter
-      const setExpr = { [col]: sql`${schema.posts[col]} + 1` }
-      const rows = await db.update(schema.posts).set(setExpr).where(eq(schema.posts.id, postId)).returning()
-      updatedPost = rows[0]
+      await db.insert(schema.postReactions).values({ 
+        postId, 
+        userId, 
+        type: reactionType, 
+        interactionWeight: weight 
+      })
     } else {
       const oldReaction = existing[0]
       if (oldReaction.type === reactionType) {
         // 2. Delete reaction record (undo)
         await db.delete(schema.postReactions).where(eq(schema.postReactions.id, oldReaction.id))
-        
-        // Decrement target counter
-        const setExpr = { [col]: sql`GREATEST(0, ${schema.posts[col]} - 1)` }
-        const rows = await db.update(schema.posts).set(setExpr).where(eq(schema.posts.id, postId)).returning()
-        updatedPost = rows[0]
       } else {
         // 3. Update reaction record to new type
-        await db.update(schema.postReactions).set({ type: reactionType }).where(eq(schema.postReactions.id, oldReaction.id))
-        
-        // Decrement old counter AND increment new counter
-        const oldCol = mapReactionToCol(oldReaction.type)
-        const setExpr: any = {
-          [oldCol]: sql`GREATEST(0, ${schema.posts[oldCol]} - 1)`,
-          [col]: sql`${schema.posts[col]} + 1`
-        }
-
-        const rows = await db.update(schema.posts).set(setExpr).where(eq(schema.posts.id, postId)).returning()
-        updatedPost = rows[0]
+        await db.update(schema.postReactions).set({ 
+          type: reactionType, 
+          interactionWeight: weight 
+        }).where(eq(schema.postReactions.id, oldReaction.id))
       }
     }
 
+    const updatedPost = await recalculatePostProximityInPostgres(postId)
     revalidatePath('/')
     return { success: true, post: updatedPost }
   } catch (err) {
     console.error('Failed to react to post in Postgres, falling back to mock:', err)
     markDbAsFailed()
-    
-    // Fallback logic for mock database
-    const mockDb = readMockDb()
-    if (!mockDb) return { success: false, error: 'Database not initialized' }
-    const post = mockDb.posts.find((p: any) => p.id === postId)
-    if (!post) return { success: false, error: 'Post not found' }
-
-    mockDb.postReactions = mockDb.postReactions || []
-    const existingIndex = mockDb.postReactions.findIndex(
-      (r: any) => r.postId === postId && r.userId === userId
-    )
-
-    if (existingIndex === -1) {
-      const newId = mockDb.postReactions.length > 0 ? Math.max(...mockDb.postReactions.map((r: any) => r.id)) + 1 : 1
-      mockDb.postReactions.push({ id: newId, postId, userId, type: reactionType })
-      post[col] = (post[col] || 0) + 1
-    } else {
-      const oldReaction = mockDb.postReactions[existingIndex]
-      if (oldReaction.type === reactionType) {
-        mockDb.postReactions.splice(existingIndex, 1)
-        post[col] = Math.max(0, (post[col] || 0) - 1)
-      } else {
-        const oldType = oldReaction.type
-        oldReaction.type = reactionType
-        const oldCol = mapReactionToCol(oldType)
-        post[oldCol] = Math.max(0, (post[oldCol] || 0) - 1)
-        post[col] = (post[col] || 0) + 1
-      }
-    }
-
-    writeMockDb(mockDb)
-    revalidatePath('/')
-    return { success: true, post }
+    return reactToPost(postId, userId, reactionType, actorLat, actorLng)
   }
 }
 
@@ -708,8 +955,12 @@ export async function reactToPost(
 export async function castCivicVote(
   postId: number,
   userId: number,
-  voteType: 'agree' | 'object'
+  voteType: 'agree' | 'object',
+  actorLat?: number,
+  actorLng?: number
 ) {
+  const weight = await calculateInteractionWeight(postId, userId, actorLat, actorLng)
+
   if (isMockDb()) {
     const mockDb = readMockDb()
     if (!mockDb) return { success: false, error: 'Database not initialized' }
@@ -727,31 +978,27 @@ export async function castCivicVote(
     if (existingIndex === -1) {
       // Create new vote
       const newId = mockDb.civicVotes.length > 0 ? Math.max(...mockDb.civicVotes.map((v: any) => v.id)) + 1 : 1
-      mockDb.civicVotes.push({ id: newId, postId, userId, vote: voteType, createdAt: new Date().toISOString() })
-      
-      // Increment post counters
-      if (voteType === 'agree') post.seconds = (post.seconds || 0) + 1
-      else post.objections = (post.objections || 0) + 1
+      mockDb.civicVotes.push({ 
+        id: newId, 
+        postId, 
+        userId, 
+        vote: voteType, 
+        interactionWeight: weight,
+        createdAt: new Date().toISOString() 
+      })
     } else {
       const oldVote = mockDb.civicVotes[existingIndex]
       if (oldVote.vote === voteType) {
         // Untoggle vote
         mockDb.civicVotes.splice(existingIndex, 1)
-        if (voteType === 'agree') post.seconds = Math.max(0, (post.seconds || 0) - 1)
-        else post.objections = Math.max(0, (post.objections || 0) - 1)
       } else {
         // Swap vote
-        const oldType = oldVote.vote
         oldVote.vote = voteType
-        
-        if (oldType === 'agree') post.seconds = Math.max(0, (post.seconds || 0) - 1)
-        else post.objections = Math.max(0, (post.objections || 0) - 1)
-
-        if (voteType === 'agree') post.seconds = (post.seconds || 0) + 1
-        else post.objections = (post.objections || 0) + 1
+        oldVote.interactionWeight = weight
       }
     }
 
+    recalculatePostProximityInMockDb(postId, mockDb)
     writeMockDb(mockDb)
     revalidatePath('/')
     return { success: true, post }
@@ -765,45 +1012,32 @@ export async function castCivicVote(
       .where(and(eq(schema.civicVotes.postId, postId), eq(schema.civicVotes.userId, userId)))
       .limit(1)
 
-    let updatedPost = null
-
     if (existing.length === 0) {
-      await db.insert(schema.civicVotes).values({ postId, userId, vote: voteType })
-      let setExpr: any = {}
-      if (voteType === 'agree') setExpr = { seconds: sql`${schema.posts.seconds} + 1` }
-      else setExpr = { objections: sql`${schema.posts.objections} + 1` }
-      const rows = await db.update(schema.posts).set(setExpr).where(eq(schema.posts.id, postId)).returning()
-      updatedPost = rows[0]
+      await db.insert(schema.civicVotes).values({ 
+        postId, 
+        userId, 
+        vote: voteType, 
+        interactionWeight: weight 
+      })
     } else {
       const oldVote = existing[0]
       if (oldVote.vote === voteType) {
         await db.delete(schema.civicVotes).where(eq(schema.civicVotes.id, oldVote.id))
-        let setExpr: any = {}
-        if (voteType === 'agree') setExpr = { seconds: sql`GREATEST(0, ${schema.posts.seconds} - 1)` }
-        else setExpr = { objections: sql`GREATEST(0, ${schema.posts.objections} - 1)` }
-        const rows = await db.update(schema.posts).set(setExpr).where(eq(schema.posts.id, postId)).returning()
-        updatedPost = rows[0]
       } else {
-        await db.update(schema.civicVotes).set({ vote: voteType }).where(eq(schema.civicVotes.id, oldVote.id))
-        let setExpr: any = {}
-        if (oldVote.vote === 'agree') {
-          setExpr.seconds = sql`GREATEST(0, ${schema.posts.seconds} - 1)`
-          setExpr.objections = sql`${schema.posts.objections} + 1`
-        } else {
-          setExpr.objections = sql`GREATEST(0, ${schema.posts.objections} - 1)`
-          setExpr.seconds = sql`${schema.posts.seconds} + 1`
-        }
-        const rows = await db.update(schema.posts).set(setExpr).where(eq(schema.posts.id, postId)).returning()
-        updatedPost = rows[0]
+        await db.update(schema.civicVotes).set({ 
+          vote: voteType, 
+          interactionWeight: weight 
+        }).where(eq(schema.civicVotes.id, oldVote.id))
       }
     }
 
+    const updatedPost = await recalculatePostProximityInPostgres(postId)
     revalidatePath('/')
     return { success: true, post: updatedPost }
   } catch (err) {
     console.error('Postgres castCivicVote failed, fallback to mock:', err)
     markDbAsFailed()
-    return castCivicVote(postId, userId, voteType)
+    return castCivicVote(postId, userId, voteType, actorLat, actorLng)
   }
 }
 

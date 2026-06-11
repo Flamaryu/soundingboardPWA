@@ -369,6 +369,8 @@ export async function resolveAddress(address: string): Promise<{
     lng = -75.578; lat = 39.770 // Rockford Park
   } else if (normalized.includes('highlands')) {
     lng = -75.570; lat = 39.766 // Highlands
+  } else if (normalized.includes('kentmere')) {
+    lng = -75.580; lat = 39.762 // Kentmere
   } else if (normalized.includes('wawaset')) {
     lng = -75.575; lat = 39.758 // Wawaset Park
   } else if (normalized.includes('delaware ave') || normalized.includes('trolley')) {

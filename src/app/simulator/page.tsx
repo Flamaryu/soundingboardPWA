@@ -11,10 +11,10 @@ export default function EchoSimulator() {
   const [toxicityFlags, setToxicityFlags] = useState<number>(0);
 
   const metrics = useMemo(() => {
-    const BASE_RADIUS = 800;
+    const BASE_RADIUS = 300;
     const MAX_CITY_RADIUS = 8000; // ~5 miles (Wilmington city limits)
     
-    const interactionScore = (walkingLikes * 200) + (civicVotes * 300) + (debateHeat * 20);
+    const interactionScore = (walkingLikes * 100) + (civicVotes * 150) + (debateHeat * 20);
     const rippleBonus = 1 + (ripples * 0.1);
     const multipliedScore = interactionScore * rippleBonus;
 
@@ -29,7 +29,7 @@ export default function EchoSimulator() {
       finalRadius = 0;
       shadowbanned = true;
     } else {
-      // 1. Enforce the Floor (Never drop below 800m)
+      // 1. Enforce the Floor (Never drop below 300m)
       finalRadius = Math.max(BASE_RADIUS, finalRadius);
       
       // 2. Enforce the Ceiling (The City Wall)
