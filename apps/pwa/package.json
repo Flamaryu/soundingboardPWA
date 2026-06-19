@@ -1,0 +1,40 @@
+{
+  "name": "@echogram/pwa",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint"
+  },
+  "dependencies": {
+    "@echogram/shared-db": "*",
+    "@turf/boolean-point-in-polygon": "^7.3.5",
+    "@types/leaflet": "^1.9.21",
+    "@upstash/redis": "^1.38.0",
+    "@vercel/analytics": "^2.0.1",
+    "drizzle-orm": "^0.45.2",
+    "flags": "^4.1.0",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^1.17.0",
+    "mapbox-gl": "^3.24.0",
+    "next": "16.2.7",
+    "pg": "^8.21.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/mapbox-gl": "^3.4.1",
+    "@types/node": "^20",
+    "@types/pg": "^8.20.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "drizzle-kit": "^0.31.10",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.7",
+    "tailwindcss": "^4",
+    "typescript": "^5"
+  }
+}

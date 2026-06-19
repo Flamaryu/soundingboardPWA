@@ -1,39 +1,19 @@
 {
-  "name": "wilmington-sounding-board",
+  "name": "echogram-sounding-board-monorepo",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@turf/boolean-point-in-polygon": "^7.3.5",
-    "@types/leaflet": "^1.9.21",
-    "@upstash/redis": "^1.38.0",
-    "@vercel/analytics": "^2.0.1",
-    "drizzle-orm": "^0.45.2",
-    "flags": "^4.1.0",
-    "leaflet": "^1.9.4",
-    "lucide-react": "^1.17.0",
-    "mapbox-gl": "^3.24.0",
-    "next": "16.2.7",
-    "pg": "^8.21.0",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/mapbox-gl": "^3.4.1",
-    "@types/node": "^20",
-    "@types/pg": "^8.20.0",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "drizzle-kit": "^0.31.10",
-    "eslint": "^9",
-    "eslint-config-next": "16.2.7",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "dev": "npm run dev:pwa",
+    "dev:pwa": "npm run dev -w @echogram/pwa",
+    "dev:admin": "npm run dev -w @echogram/admin",
+    "build:pwa": "npm run build -w @echogram/pwa",
+    "build:admin": "npm run build -w @echogram/admin",
+    "build:shared": "npm run build -w @echogram/shared-db",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present"
   }
 }

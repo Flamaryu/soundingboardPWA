@@ -1,4 +1,4 @@
-# Wilmington Community Sounding Board
+# Echogram
 
 A premium, hyper-local community bulletin board and planning district feedback platform for Wilmington, Delaware. This Progressive Web App (PWA) enables local citizens and businesses to coordinate planning actions, raise civic alerts, and build consensus on neighborhood-level proposals.
 
@@ -20,7 +20,7 @@ Rather than relying on flat, chronological feed algorithms that get clogged with
 
 Reach expands dynamically through community validation and external shares ("Ripples"), but decays naturally over time or when flagged by the community for toxicity. To prevent inter-city bleeding, post reach is strictly walled-off at the city limits.
 
-<a href="https://soundingboard-pwa.vercel.app/simulator" target="_blank">
+<a href="https://echogram-pwa.vercel.app/simulator" target="_blank">
   <img src="docs/simulator.png" alt="Echo Simulator Preview" width="350" />
 </a>
 
