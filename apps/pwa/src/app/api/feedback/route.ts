@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
-import { db, isMockDb } from '@/db'
-import { betaFeedback } from '@/db/schema'
+import { db, isMockDb, betaFeedback } from '@echogram/shared-db'
 import * as fs from 'fs'
 import * as path from 'path'
 

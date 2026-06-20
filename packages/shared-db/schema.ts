@@ -182,5 +182,5 @@ export const civicVotesRelations = relations(civicVotes, ({ one }) => ({
 export const betaFeedback = pgTable('beta_feedback', {
   id: serial('id').primaryKey(),
   content: text('content').notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
 })
