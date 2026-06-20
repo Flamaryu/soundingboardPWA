@@ -2102,6 +2102,26 @@
       "latitude": -75.575,
       "longitude": 39.758,
       "neighborhoodId": 3
+    },
+    {
+      "id": 5,
+      "name": "Sarah Jenkins",
+      "email": "sarah@wilm.net",
+      "role": "citizen",
+      "address": "Trolley Square, Wilmington DE",
+      "latitude": -75.568,
+      "longitude": 39.762,
+      "neighborhoodId": 9
+    },
+    {
+      "id": 6,
+      "name": "Delaware Humane Association",
+      "email": "dha@delawarehumane.org",
+      "role": "nonprofit",
+      "address": "Riverfront, Wilmington DE",
+      "latitude": -75.556,
+      "longitude": 39.732,
+      "neighborhoodId": 34
     }
   ],
   "posts": [

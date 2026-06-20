@@ -25,51 +25,116 @@ export async function POST(request: Request) {
     }
     // 4 required templates + 4 highly diverse randomized templates
     const pool = [
-      // Post 1 (Center City) - Rodney Square
+      // Post 1: Marcus Williams (Citizen)
       {
-        content: 'Rodney Square Food Truck Festival! Delaware Ave is buzzing with great tacos, sliders, and local vendors. Stop by before 3 PM!',
-        latitude: 39.7447,
-        longitude: -75.5484,
+        content: 'Welcome to Echogram! Excited to launch our new geospatial platform. Explore notifications within walking distance or check official city limits!',
+        latitude: 39.7592,
+        longitude: -75.5691,
+        mediaUrl: null,
+        mediaType: 'none',
+        neighborhoodName: 'Forty Acres',
+        neighborhoodId: 5,
+        isCoreTemplate: true,
+        userId: 1,
+        userName: 'Marcus Williams',
+        userRole: 'citizen',
+        userType: 'citizen',
+        isBeacon: false,
+        isDistrictBlast: false
+      },
+      // Post 2: Brew Haha Cafe (Business Beacon)
+      {
+        content: 'Fresh pastry batch out of the oven! 🥐 (Beacon Drop) Get 10% off any freshly baked almond croissant for the next 2 hours! Tap to view directions.',
+        latitude: 39.758,
+        longitude: -75.560,
+        mediaUrl: 'https://images.unsplash.com/photo-1555507036-ab1f4038808a?w=800&auto=format&fit=crop',
+        mediaType: 'image',
+        neighborhoodName: 'Delaware Ave',
+        neighborhoodId: 4,
+        isCoreTemplate: true,
+        userId: 2,
+        userName: 'Brew Haha Cafe',
+        userRole: 'business',
+        userType: 'business',
+        isBeacon: true,
+        beaconExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+        isDistrictBlast: false
+      },
+      // Post 3: Wilmington Hope Mission (Nonprofit Blast)
+      {
+        content: 'Community Clothing Drive (District 4 Blast). We are collecting coats and blankets this Saturday from 9 AM to 1 PM at the mission. Let\'s keep our neighbors warm.',
+        latitude: 39.742,
+        longitude: -75.548,
         mediaUrl: null,
         mediaType: 'none',
         neighborhoodName: 'Center City',
-        neighborhoodId: 1,
-        isCoreTemplate: true
+        neighborhoodId: 29,
+        isCoreTemplate: true,
+        userId: 3,
+        userName: 'Wilmington Hope Mission',
+        userRole: 'nonprofit',
+        userType: 'nonprofit',
+        isBeacon: false,
+        isDistrictBlast: true,
+        targetDistrictId: 4,
+        councilDistrictId: 4
       },
-      // Post 2 (Trolley Square)
+      // Post 4: Council Member Davis (Political Blast)
       {
-        content: 'Outdoor patio dining and nightlife are back in full swing at Trolley Square! Enjoying some amazing craft drinks and great local vibes under the stars.',
+        content: 'Davis City Council Town Hall Meetup (District 1 Blast). I\'m hosting an open town hall dialog at Wawaset Park this Thursday at 6 PM. Join us to discuss zoning reforms, traffic controls, and public safety initiatives.',
+        latitude: 39.758,
+        longitude: -75.575,
+        mediaUrl: null,
+        mediaType: 'none',
+        neighborhoodName: 'Wawaset Park',
+        neighborhoodId: 3,
+        isCoreTemplate: true,
+        userId: 4,
+        userName: 'Council Member Davis',
+        userRole: 'political',
+        userType: 'political',
+        isBeacon: false,
+        isDistrictBlast: true,
+        targetDistrictId: 1,
+        councilDistrictId: 1
+      },
+      // Post 5: Sarah Jenkins (Citizen)
+      {
+        content: 'We should start a community composting program in Trolley Square! Let me know if anyone wants to partner up or has tips.',
         latitude: 39.7570,
         longitude: -75.5645,
-        mediaUrl: 'https://images.unsplash.com/photo-1543007630-9710e4a00a20?auto=format&fit=crop&w=800&q=80',
-        mediaType: 'image',
-        neighborhoodName: 'Trolley Square',
-        neighborhoodId: 2,
-        isCoreTemplate: true
+        mediaUrl: null,
+        mediaType: 'none',
+        neighborhoodName: 'Forty Acres',
+        neighborhoodId: 9,
+        isCoreTemplate: true,
+        userId: 5,
+        userName: 'Sarah Jenkins',
+        userRole: 'citizen',
+        userType: 'citizen',
+        isBeacon: false,
+        isDistrictBlast: false
       },
-      // Post 3 (Kentmere)
+      // Post 6: Delaware Humane Association (Nonprofit Blast)
       {
-        content: 'Rockford Park morning trail walk. The forest sounds and the tower look beautiful today near Kentmere. Walking radius visibility test!',
-        latitude: 39.7635,
-        longitude: -75.5745,
-        mediaUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-        mediaType: 'video',
-        neighborhoodName: 'Kentmere',
-        neighborhoodId: 3,
-        isCoreTemplate: true
-      },
-      // Post 4 (Riverfront)
-      {
-        content: 'Dynamic waterfront dining options here at the Wilmington Riverfront. The Riverwalk has some stunning views and excellent local menus.',
-        latitude: 39.7345,
-        longitude: -75.5520,
-        mediaUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?auto=format&fit=crop&w=800&q=80',
+        content: 'Dog adoption event at the Riverfront walk this Sunday! 🐾 (District 4 Blast) Meet some wonderful shelter animals looking for their forever homes. Starts at 11 AM.',
+        latitude: 39.732,
+        longitude: -75.556,
+        mediaUrl: 'https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=800&auto=format&fit=crop',
         mediaType: 'image',
         neighborhoodName: 'Riverfront',
-        neighborhoodId: 4,
-        isCoreTemplate: true
+        neighborhoodId: 34,
+        isCoreTemplate: true,
+        userId: 6,
+        userName: 'Delaware Humane Association',
+        userRole: 'nonprofit',
+        userType: 'nonprofit',
+        isBeacon: false,
+        isDistrictBlast: true,
+        targetDistrictId: 4,
+        councilDistrictId: 4
       },
-      // Post 5 (Forty Acres) - Extra randomized
+      // Post 7 (Forty Acres) - Extra randomized
       {
         content: 'Grabbed a delicious iced latte from the new coffee spot in Forty Acres. Perfect spot to sit outside and read a book.',
         latitude: 39.7592,
@@ -78,9 +143,15 @@ export async function POST(request: Request) {
         mediaType: 'image',
         neighborhoodName: 'Forty Acres',
         neighborhoodId: 5,
-        isCoreTemplate: false
+        isCoreTemplate: false,
+        userId: 999,
+        userName: getRandomCitizenName(),
+        userRole: 'citizen',
+        userType: 'citizen',
+        isBeacon: false,
+        isDistrictBlast: false
       },
-      // Post 6 (Little Italy) - Extra randomized
+      // Post 8 (Little Italy) - Extra randomized
       {
         content: 'Great family dinner in Little Italy tonight! The homemade lasagna was incredible and the service felt like home.',
         latitude: 39.7495,
@@ -89,9 +160,15 @@ export async function POST(request: Request) {
         mediaType: 'none',
         neighborhoodName: 'Little Italy',
         neighborhoodId: 6,
-        isCoreTemplate: false
+        isCoreTemplate: false,
+        userId: 999,
+        userName: getRandomCitizenName(),
+        userRole: 'citizen',
+        userType: 'citizen',
+        isBeacon: false,
+        isDistrictBlast: false
       },
-      // Post 7 (Highlands) - Extra randomized
+      // Post 9 (Highlands) - Extra randomized
       {
         content: 'Beautiful morning jog through the Highlands. The historic homes and blooming gardens look absolutely stunning today.',
         latitude: 39.7620,
@@ -100,9 +177,15 @@ export async function POST(request: Request) {
         mediaType: 'image',
         neighborhoodName: 'Highlands',
         neighborhoodId: 7,
-        isCoreTemplate: false
+        isCoreTemplate: false,
+        userId: 999,
+        userName: getRandomCitizenName(),
+        userRole: 'citizen',
+        userType: 'citizen',
+        isBeacon: false,
+        isDistrictBlast: false
       },
-      // Post 8 (Wawaset Park) - Extra randomized
+      // Post 10 (Wawaset Park) - Extra randomized
       {
         content: 'Spent the afternoon walking around Wawaset Park. It feels like an English village hidden right here in Wilmington.',
         latitude: 39.7540,
@@ -111,7 +194,13 @@ export async function POST(request: Request) {
         mediaType: 'none',
         neighborhoodName: 'Wawaset Park',
         neighborhoodId: 8,
-        isCoreTemplate: false
+        isCoreTemplate: false,
+        userId: 999,
+        userName: getRandomCitizenName(),
+        userRole: 'citizen',
+        userType: 'citizen',
+        isBeacon: false,
+        isDistrictBlast: false
       }
     ]
 
@@ -128,11 +217,11 @@ export async function POST(request: Request) {
         id,
         title: contentStr.slice(0, 45) + (contentStr.length > 45 ? '...' : ''),
         content: contentStr,
-        type: 'miniblog',
+        type: item.isDistrictBlast ? 'DISTRICT_BILLBOARD' : 'miniblog',
         mediaUrl: item.mediaUrl,
         mediaType: item.mediaType,
-        userType: 'citizen',
-        userId: 999,
+        userType: item.userType,
+        userId: item.userId,
         neighborhoodId: item.neighborhoodId,
         createdAt,
         isProposal: false,
@@ -142,18 +231,25 @@ export async function POST(request: Request) {
         ripples: 0,
         toxicityFlags: 0,
         hoursPassed: 0,
-        userName: getRandomCitizenName(),
-        userRole: 'citizen',
+        userName: item.userName,
+        userRole: item.userRole,
         neighborhoodName: item.neighborhoodName,
         latitude: lat,
         longitude: lng,
-        radius_meters: 300,
+        radius_meters: item.isBeacon ? 300 : (item.isDistrictBlast ? 0 : 300),
         shadowbanned: false,
-        hit_city_wall: false,
+        hit_city_wall: item.isDistrictBlast ? true : false,
+        isDistrictBlast: item.isDistrictBlast,
+        councilDistrictId: item.isDistrictBlast ? item.targetDistrictId : null,
+        isBeacon: item.isBeacon,
+        beaconExpiresAt: item.isBeacon ? item.beaconExpiresAt : null,
         userReactions: {},
         userVotes: {}
       }
     })
+
+    // Clear existing sandbox posts first to ensure clean state
+    await redis.del('sandbox:posts')
 
     // Batch push these items into the Upstash Redis database list using lpush
     await redis.lpush('sandbox:posts', ...postsToSeed.map(p => JSON.stringify(p)))

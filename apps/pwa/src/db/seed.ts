@@ -137,6 +137,8 @@ async function main() {
       { id: 2, name: 'Brew Haha Cafe', email: 'info@brewhaha.com', role: 'business', address: '1700 Delaware Ave, Wilmington, DE', latitude: -75.560, longitude: 39.758, neighborhoodId: 4 }, // Delaware Ave
       { id: 3, name: 'Wilmington Hope Mission', email: 'mission@wilmhope.org', role: 'nonprofit', address: 'Center City, Wilmington, DE', latitude: -75.548, longitude: 39.742, neighborhoodId: 29 }, // Center City
       { id: 4, name: 'Council Member Davis', email: 'davis@wilmde.gov', role: 'political', address: 'Wawaset Park, Wilmington DE', latitude: -75.575, longitude: 39.758, neighborhoodId: 3 }, // Wawaset Park
+      { id: 5, name: 'Sarah Jenkins', email: 'sarah@wilm.net', role: 'citizen', address: 'Trolley Square, Wilmington DE', latitude: -75.568, longitude: 39.762, neighborhoodId: 9 },
+      { id: 6, name: 'Delaware Humane Association', email: 'dha@delawarehumane.org', role: 'nonprofit', address: 'Riverfront, Wilmington DE', latitude: -75.556, longitude: 39.732, neighborhoodId: 34 },
     ],
     posts: [
       {
