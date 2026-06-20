@@ -7,5 +7,5 @@ export default defineConfig({
   dbCredentials: {
     url: process.env.DATABASE_URL || (() => { throw new Error("Error: DATABASE_URL is not defined.") })(),
   },
-  tablesFilter: ["states", "cities", "planning_districts", "neighborhoods", "users", "posts", "post_reactions", "beta_feedback"]
+  tablesFilter: ["states", "cities", "planning_districts", "neighborhoods", "users", "posts", "post_reactions", "beta_feedback", "council_districts", "historic_districts", "civic_votes"]
 });

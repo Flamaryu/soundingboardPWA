@@ -42,7 +42,11 @@ export async function POST(request: Request) {
     // Postgres mode
     const inserted = await db
       .insert(betaFeedback)
-      .values({ content: content.trim() })
+      .values({
+        content: content.trim(),
+        id: Math.floor(Math.random() * 10000000),
+        createdAt: new Date()
+      })
       .returning()
 
     return NextResponse.json({ success: true, feedback: inserted[0] })
