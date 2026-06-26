@@ -408,7 +408,26 @@ export default function FluidLayoutContainer({
   const [isPinned, setIsPinned] = useState(false)
   const [pinnedCouncilId, setPinnedCouncilId] = useState(1)
   const [formError, setFormError] = useState('')
+  const [anchorType, setAnchorType] = useState<'live' | 'home'>('live')
   const [isPending, startTransition] = useTransition()
+
+  const handleAnchorTypeChange = (type: 'live' | 'home') => {
+    setAnchorType(type)
+    if (type === 'live') {
+      if (typeof window !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            setExactPublishCoordinates({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude
+            });
+          },
+          (error) => console.error("High-accuracy hardware lock bypassed", error),
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        );
+      }
+    }
+  }
 
   // Track coordinates and active user
   const currentUser = mockUsers.find(u => u.id === activeUserId) || activeUser
@@ -478,17 +497,39 @@ export default function FluidLayoutContainer({
   useEffect(() => {
     if (showCreateForm) {
       if (typeof window !== 'undefined' && navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (position) => {
-            // Bind these high-precision coordinates to the local form state
-            setExactPublishCoordinates({
-              lat: position.coords.latitude,
-              lng: position.coords.longitude
-            });
-          },
-          (error) => console.error("High-accuracy hardware lock bypassed", error),
-          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
-        );
+        const getPosition = (highAccuracy: boolean) => {
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              // Bind these high-precision coordinates to the local form state
+              setExactPublishCoordinates({
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+              });
+            },
+            (error) => {
+              console.warn(
+                highAccuracy 
+                  ? "High-accuracy geolocation failed, attempting relaxed precision." 
+                  : "Relaxed geolocation failed, falling back to Wilmington baseline.",
+                error
+              );
+              if (highAccuracy) {
+                // Try again with relaxed constraints
+                getPosition(false);
+              } else {
+                // Fallback to Wilmington baseline
+                setExactPublishCoordinates({
+                  lat: 39.7450,
+                  lng: -75.5500
+                });
+              }
+            },
+            highAccuracy
+              ? { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+              : { enableHighAccuracy: false, timeout: 15000, maximumAge: 60000 }
+          );
+        };
+        getPosition(true);
       }
     } else {
       setExactPublishCoordinates(null)
@@ -534,8 +575,15 @@ export default function FluidLayoutContainer({
         const refCenter = (viewMode === 'walking' && isUserLocationValid)
           ? userLocation
           : (feedCenter ?? userLocation ?? { lat: mapCenter.lat, lng: mapCenter.lng });
-        const lat = refCenter.lat
-        const lng = refCenter.lng
+        
+        let lat = refCenter?.lat;
+        let lng = refCenter?.lng;
+        if (!refCenter || lat === undefined || lat === null || Number.isNaN(lat) || lat === 0 ||
+            lng === undefined || lng === null || Number.isNaN(lng) || lng === 0) {
+          lat = 39.7450;
+          lng = -75.5500;
+        }
+
         const response = await fetch(`/api/posts/sandbox?lat=${lat}&lng=${lng}&userId=${activeUserId}&viewMode=${viewMode}&activeOverlay=${activeMapLayer}&subFeedType=${viewMode}&councilDistrictId=${activeCouncilDistrictId}&historicDistrictId=${activeHistoricDistrictId}&neighborhoodId=${activeNhId}`)
         if (response.status === 503) {
           setDbCredentialsMissing(true)
@@ -710,7 +758,8 @@ export default function FluidLayoutContainer({
               userRole: currentUser?.role,
               isAnonymous: isAnonymous,
               isDistrictBlast: blastToCouncil,
-              targetDistrictId: targetCouncilId
+              targetDistrictId: targetCouncilId,
+              anchorType: anchorType
             })
           })
 
@@ -726,6 +775,7 @@ export default function FluidLayoutContainer({
               setIsPinned(false)
               setIsAnonymous(false)
               setShowCreateForm(false)
+              setAnchorType('live')
               fetchPosts()
             } else {
               setFormError(res.error || 'Failed to publish post.')
@@ -770,6 +820,7 @@ export default function FluidLayoutContainer({
         setIsPinned(false)
         setIsAnonymous(false)
         setShowCreateForm(false)
+        setAnchorType('live')
         
         // Enrich the post locally and append to state for immediate rendering
         const nh = neighborhoods.find(n => n.id === (res.post.neighborhoodId || activeNhId))
@@ -1568,11 +1619,73 @@ export default function FluidLayoutContainer({
                   <Send className="w-3.5 h-3.5" /> Write Announcement
                 </h3>
 
-                {currentUser.role === 'business' && (
-                  <div className="bg-purple-950/40 border border-purple-500/20 text-purple-300 p-2.5 rounded-xl text-[10px] leading-relaxed">
-                    🚨 <strong>Business Lock:</strong> Your post maps to <strong>{currentUser.neighborhoodName}</strong>.
-                  </div>
-                )}
+                {(() => {
+                  const isBusinessOrNonprofit = currentUser?.role === 'business' || currentUser?.role === 'nonprofit';
+                  return (
+                    <div className="flex flex-col gap-2 p-3 bg-[#0b132b]/50 border border-slate-700/30 rounded-2xl">
+                      <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider flex items-center gap-1.5">
+                        ⚓ Spatial Anchor Location
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1">
+                        {!isBusinessOrNonprofit ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleAnchorTypeChange('live')}
+                              className={`flex items-center justify-center gap-2 p-2 rounded-xl text-[11px] font-bold transition-all duration-200 border ${
+                                anchorType === 'live'
+                                  ? 'bg-[#d90429]/20 border-[#d90429] text-white shadow-lg shadow-[#d90429]/10'
+                                  : 'bg-[#1c2541]/40 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
+                              }`}
+                            >
+                              <span>📍</span> Right Here (Live GPS)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAnchorTypeChange('home')}
+                              className={`flex items-center justify-center gap-2 p-2 rounded-xl text-[11px] font-bold transition-all duration-200 border ${
+                                anchorType === 'home'
+                                  ? 'bg-[#d90429]/20 border-[#d90429] text-white shadow-lg shadow-[#d90429]/10'
+                                  : 'bg-[#1c2541]/40 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
+                              }`}
+                            >
+                              <span>🏠</span> My Neighborhood
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex flex-col sm:flex-row gap-1.5 col-span-2 w-full">
+                            <button
+                              type="button"
+                              onClick={() => handleAnchorTypeChange('home')}
+                              className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-xl text-[10px] md:text-[11px] font-bold transition-all duration-200 border ${
+                                anchorType === 'home'
+                                  ? 'bg-[#d90429]/20 border-[#d90429] text-white shadow-lg shadow-[#d90429]/10'
+                                  : 'bg-[#1c2541]/40 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
+                              }`}
+                            >
+                              <span>🏢</span> Primary Headquarters Address
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAnchorTypeChange('live')}
+                              className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-xl text-[10px] md:text-[11px] font-bold transition-all duration-200 border ${
+                                anchorType === 'live'
+                                  ? 'bg-[#d90429]/20 border-[#d90429] text-white shadow-lg shadow-[#d90429]/10'
+                                  : 'bg-[#1c2541]/40 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
+                              }`}
+                            >
+                              <span>🚚</span> Mobile Dispatch / Pop-Up Event
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-slate-400/80 leading-relaxed mt-0.5 px-0.5">
+                        {anchorType === 'live' && "📍 Real-time GPS: Binds your announcement to your current location right now."}
+                        {anchorType === 'home' && (!isBusinessOrNonprofit ? "🏠 My Neighborhood: Places the announcement at your profile home neighborhood centroid." : "🏢 Headquarters Address: Coordinates map strictly to your registered storefront/office address.")}
+                      </p>
+                    </div>
+                  );
+                })()}
 
                 <div className="flex gap-1.5 bg-[#0b132b] p-0.5 rounded-lg border border-slate-700/30 w-fit">
                   {([
@@ -1757,7 +1870,10 @@ export default function FluidLayoutContainer({
                 <div className="flex justify-end gap-2 text-xs">
                   <button
                     type="button"
-                    onClick={() => setShowCreateForm(false)}
+                    onClick={() => {
+                      setShowCreateForm(false)
+                      setAnchorType('live')
+                    }}
                     className="px-3 py-1.5 text-slate-400 font-bold hover:text-white"
                   >
                     Cancel
@@ -1839,6 +1955,34 @@ export default function FluidLayoutContainer({
                       <span className="bg-[#0b132b] px-2 py-0.5 rounded text-[8px] text-slate-400 font-bold border border-slate-800 uppercase">
                         {post.type}
                       </span>
+                      {(() => {
+                        const radius = post.currentRadius ?? post.radius_meters ?? 300;
+                        if (radius <= 300) {
+                          return (
+                            <span className="bg-[#0b132b] px-2 py-0.5 rounded text-[8px] text-slate-400 font-bold border border-slate-700/60 uppercase">
+                              📍 Local Walking
+                            </span>
+                          );
+                        } else if (radius <= 1500) {
+                          return (
+                            <span className="bg-cyan-500/10 px-2 py-0.5 rounded text-[8px] text-cyan-300 font-extrabold border border-cyan-500/20 uppercase">
+                              🏠 Neighborhood
+                            </span>
+                          );
+                        } else if (radius <= 4000) {
+                          return (
+                            <span className="bg-blue-500/15 px-2 py-0.5 rounded text-[8px] text-blue-400 font-extrabold border border-blue-500/30 uppercase">
+                              🏢 District-Wide
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <span className="bg-[#00f5d4]/10 px-2 py-0.5 rounded text-[8px] text-[#00f5d4] font-extrabold border border-[#00f5d4] shadow-[0_0_8px_rgba(0,245,212,0.3)] uppercase animate-pulse">
+                              👑 City-Wide
+                            </span>
+                          );
+                        }
+                      })()}
                     </div>
                   </div>
 

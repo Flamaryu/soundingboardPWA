@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getUpstashRedis } from '@echogram/shared-db'
+import { getUpstashRedis, propagatePostEcho, readSharedMockDb } from '@echogram/shared-db'
 
 function getRandomCitizenName() {
   const randNum = Math.floor(Math.random() * 9000) + 1000
@@ -241,10 +241,47 @@ export async function POST(request: Request) {
       }
     })
 
-    // Clear existing sandbox posts first to ensure clean state
+    // Clear existing sandbox posts and their individual keys first to ensure clean state
+    const existingRaw = await redis.lrange('sandbox:posts', 0, -1)
+    for (const raw of existingRaw) {
+      try {
+        const p = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (p && p.id) {
+          await redis.del(`post:${p.id}`)
+        }
+      } catch (e) {}
+    }
     await redis.del('sandbox:posts')
+    await redis.del('geo:posts')
 
-    await redis.lpush('sandbox:posts', ...postsToSeed.map(p => JSON.stringify(p)))
+    const mockDb = readSharedMockDb()
+    if (mockDb) {
+      if (mockDb.neighborhoods) {
+        for (const nh of mockDb.neighborhoods) {
+          await redis.del(`feed:neighborhood:${nh.id}`)
+          if (nh.districtId) await redis.del(`feed:district:${nh.districtId}`)
+        }
+      }
+      if (mockDb.councilDistricts) {
+        for (const cd of mockDb.councilDistricts) {
+          await redis.del(`feed:council:${cd.id}`)
+        }
+      }
+      if (mockDb.historicDistricts) {
+        for (const hd of mockDb.historicDistricts) {
+          await redis.del(`feed:historic:${hd.id}`)
+        }
+      }
+    }
+    await redis.del('feed:city')
+
+    if (postsToSeed.length > 0) {
+      await redis.lpush('sandbox:posts', ...postsToSeed.map(p => JSON.stringify(p)))
+      for (const p of postsToSeed) {
+        await redis.set(`post:${p.id}`, JSON.stringify(p))
+        await propagatePostEcho(p.id, p.latitude, p.longitude, p.radius_meters)
+      }
+    }
 
     return NextResponse.json({ 
       success: true, 

@@ -10,6 +10,7 @@ import {
 } from '@/db/spatialQueries'
 import { getFeedPosts } from '@/app/actions/posts'
 import { Redis } from '@upstash/redis'
+import { propagatePostEcho } from '@echogram/shared-db'
 
 // Initialize the Upstash Redis client
 const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
@@ -101,7 +102,8 @@ export async function POST(request: Request) {
         userRole,
         isAnonymous,
         isDistrictBlast,
-        targetDistrictId
+        targetDistrictId,
+        anchorType
       } = body
 
       if (!content || !content.trim()) {
@@ -127,6 +129,20 @@ export async function POST(request: Request) {
 
       let postLat = typeof latitude === 'number' ? latitude : parseFloat(latitude)
       let postLng = typeof longitude === 'number' ? longitude : parseFloat(longitude)
+
+      if (anchorType === 'home' && finalUserId !== 999) {
+        const mockDb = readMockDb()
+        const user = mockDb?.users?.find((u: any) => u.id === finalUserId)
+        if (user && typeof user.latitude === 'number' && typeof user.longitude === 'number') {
+          if (user.latitude < 0) {
+            postLat = user.longitude
+            postLng = user.latitude
+          } else {
+            postLat = user.latitude
+            postLng = user.longitude
+          }
+        }
+      }
 
       const isBlast = !!isDistrictBlast && targetDistrictId !== undefined && targetDistrictId !== null
       const targetCdId = isBlast ? Number(targetDistrictId) : null
@@ -162,10 +178,13 @@ export async function POST(request: Request) {
         councilDistrictId: targetCdId,
         isDistrictBlast: isBlast,
         userReactions: {},
-        userVotes: {}
+        userVotes: {},
+        anchorType: anchorType || 'live'
       }
 
       await redis.lpush('sandbox:posts', JSON.stringify(newPost))
+      await redis.set(`post:${newPost.id}`, JSON.stringify(newPost))
+      await propagatePostEcho(newPost.id, newPost.latitude, newPost.longitude, newPost.radius_meters)
       return NextResponse.json({ success: true, post: newPost })
     }
 
@@ -176,6 +195,39 @@ export async function POST(request: Request) {
     console.error('API Route Error in POST /api/posts:', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }
+}
+
+function isPostOutsideNativeNeighborhood(postLng: number, postLat: number, nativeNhId: number, currentRadius: number, mockDb: any): boolean {
+  const nh = mockDb?.neighborhoods?.find((n: any) => n.id === nativeNhId)
+  if (!nh || !nh.boundary) return true
+  
+  const latOffset = currentRadius / 111111
+  const lngOffset = currentRadius / (111111 * Math.cos(postLat * Math.PI / 180))
+  
+  const cardinalPoints = [
+    [postLng, postLat + latOffset],
+    [postLng, postLat - latOffset],
+    [postLng + lngOffset, postLat],
+    [postLng - lngOffset, postLat]
+  ]
+  
+  const booleanPointInPolygon = require('@turf/boolean-point-in-polygon').default || require('@turf/boolean-point-in-polygon')
+
+  for (const coords of cardinalPoints) {
+    const pt = {
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'Point', coordinates: coords }
+    }
+    try {
+      if (!booleanPointInPolygon(pt as any, nh.boundary)) {
+        return true
+      }
+    } catch (err) {
+      return true
+    }
+  }
+  return false
 }
 
 export async function GET(request: Request) {
@@ -215,187 +267,94 @@ export async function GET(request: Request) {
         return NextResponse.json({ success: false, error: 'Valid latitude and longitude are required' }, { status: 400 })
       }
 
-      const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
-      const posts = rawPosts.map((item: any) => {
-        try {
-          if (typeof item === 'object' && item !== null) return item
-          return typeof item === 'string' ? JSON.parse(item) : item
-        } catch (e) {
-          console.error("Malformed sandbox post skipped:", item)
-          return null
-        }
-      }).filter(Boolean)
-
       const mockDb = readMockDb()
 
-      const filteredPosts = posts.filter((p: any) => {
-        if (p.shadowbanned === true) return false
+      // 1. Fetch matched post IDs based on view mode (Zero geometry calculation at read-time)
+      let postIds: string[] = []
 
-        let postLat = p.latitude
-        let postLng = p.longitude
-        if (typeof postLat !== 'number' || typeof postLng !== 'number') {
-          const nh = mockDb?.neighborhoods?.find((n: any) => n.id === p.neighborhoodId)
-          if (nh && nh.boundary && nh.boundary.coordinates) {
-            const centroid = getNeighborhoodCentroid(nh.boundary.coordinates)
-            postLat = centroid.lat
-            postLng = centroid.lng
-          } else {
-            postLat = 39.742
-            postLng = -75.548
+      if (isWalking) {
+        // Tier 1: Walking Radius (strictly query georadius from geo index)
+        postIds = (await redis.exec(['GEORADIUS', 'geo:posts', readerLng, readerLat, 300, 'm'])) as string[]
+      } else if (subFeedType === 'neighborhood' || viewMode === 'neighborhood') {
+        // Tier 2: Neighborhood Feed
+        if (neighborhoodId) {
+          postIds = await redis.smembers(`feed:neighborhood:${neighborhoodId}`)
+        }
+      } else if (subFeedType === 'district' || viewMode === 'district') {
+        // Tier 3: District Feed
+        let activeDistrictId = 1
+        if (neighborhoodId && mockDb?.neighborhoods) {
+          const nh = mockDb.neighborhoods.find((n: any) => n.id === neighborhoodId)
+          if (nh && nh.districtId) {
+            activeDistrictId = nh.districtId
           }
         }
-
-        // Hybrid Spatial Logic for Council District Blasts and Standard posts in Walking Feed
-        if (isWalking) {
-          const distance = getHaversineDistance(readerLng, readerLat, postLng, postLat)
-          p.distance_meters = distance
-          return distance <= 300
+        postIds = await redis.smembers(`feed:district:${activeDistrictId}`)
+      } else if (viewMode === 'council' || subFeedType === 'council') {
+        if (councilDistrictId) {
+          postIds = await redis.smembers(`feed:council:${councilDistrictId}`)
         }
-
-        if (viewMode === 'walking' || subFeedType === 'walking') {
-          const isCouncilBlast = p.isDistrictBlast || (p.type === 'DISTRICT_BILLBOARD' && p.councilDistrictId !== null)
-
-          if (isCouncilBlast) {
-            // Condition A: Structural Containment
-            let isUserInside = false
-            if (p.councilDistrictId !== null && p.councilDistrictId !== undefined) {
-              const cd = mockDb?.councilDistricts?.find((d: any) => d.id === p.councilDistrictId)
-              if (cd && cd.boundary) {
-                const point = {
-                  type: 'Feature',
-                  properties: {},
-                  geometry: { type: 'Point', coordinates: [readerLng, readerLat] }
-                }
-                try {
-                  const booleanPointInPolygon = require('@turf/boolean-point-in-polygon').default || require('@turf/boolean-point-in-polygon')
-                  isUserInside = booleanPointInPolygon(point as any, cd.boundary)
-                } catch (err) {
-                  isUserInside = false
-                }
-              }
-            }
-
-            // Condition B: Dynamic Radius check
-            const distance = getHaversineDistance(readerLng, readerLat, postLng, postLat)
-            p.distance_meters = distance
-            const finalRadius = p.radius_meters ?? 0
-
-            if (!isUserInside && distance > finalRadius) {
-              return false
-            }
-          } else {
-            // Non-council-blast posts
-
-            // Historic district containment check
-            if (p.historicDistrictId !== null && p.historicDistrictId !== undefined) {
-              let isUserInside = false
-              const hd = mockDb?.historicDistricts?.find((d: any) => d.id === p.historicDistrictId)
-              if (hd && hd.boundary) {
-                const point = {
-                  type: 'Feature',
-                  properties: {},
-                  geometry: { type: 'Point', coordinates: [readerLng, readerLat] }
-                }
-                try {
-                  const booleanPointInPolygon = require('@turf/boolean-point-in-polygon').default || require('@turf/boolean-point-in-polygon')
-                  isUserInside = booleanPointInPolygon(point as any, hd.boundary)
-                } catch (err) {
-                  isUserInside = false
-                }
-              }
-              if (!isUserInside) {
-                return false
-              }
-            }
-
-            const distance = getHaversineDistance(readerLng, readerLat, postLng, postLat)
-            p.distance_meters = distance
-            if (distance > (p.radius_meters ?? 300)) {
-              return false
-            }
-          }
+      } else if (viewMode === 'historic' || subFeedType === 'historic') {
+        if (historicDistrictId) {
+          postIds = await redis.smembers(`feed:historic:${historicDistrictId}`)
         }
+      } else {
+        // Tier 4: City Feed
+        postIds = await redis.smembers('feed:city')
+      }
 
-        // Context shape feed filtering (Council / Historic feeds)
-        if (viewMode === 'council' || subFeedType === 'council') {
-          if (!councilDistrictId) return false
-          if (p.councilDistrictId === councilDistrictId) return true
-          const cd = mockDb?.councilDistricts?.find((d: any) => d.id === councilDistrictId)
-          if (!cd || !cd.boundary) return false
-          const point = {
-            type: 'Feature',
-            properties: {},
-            geometry: { type: 'Point', coordinates: [postLng, postLat] }
-          }
+      let matchedPosts: any[] = []
+      if (postIds && postIds.length > 0) {
+        const keys = postIds.map(id => `post:${id}`)
+        const rawData = await redis.mget(...keys)
+        matchedPosts = rawData.map((item: any) => {
           try {
-            const booleanPointInPolygon = require('@turf/boolean-point-in-polygon').default || require('@turf/boolean-point-in-polygon')
-            return booleanPointInPolygon(point as any, cd.boundary)
-          } catch (err) {
-            return false
+            if (typeof item === 'object' && item !== null) return item
+            return typeof item === 'string' ? JSON.parse(item) : item
+          } catch (e) {
+            return null
           }
-        }
+        }).filter(Boolean)
+      }
 
-        if (viewMode === 'historic' || subFeedType === 'historic') {
-          if (!historicDistrictId) return false
-          const hd = mockDb?.historicDistricts?.find((d: any) => d.id === historicDistrictId)
-          if (!hd || !hd.boundary) return false
-          const point = {
-            type: 'Feature',
-            properties: {},
-            geometry: { type: 'Point', coordinates: [postLng, postLat] }
-          }
-          try {
-            const booleanPointInPolygon = require('@turf/boolean-point-in-polygon').default || require('@turf/boolean-point-in-polygon')
-            return booleanPointInPolygon(point as any, hd.boundary)
-          } catch (err) {
-            return false
-          }
-        }
+      // Filter out shadowbanned posts
+      const activePosts = matchedPosts.filter((p: any) => p.shadowbanned !== true)
 
-        return true
-      }).map((p: any) => {
-        // Map dynamic decay on read
-        const hoursPassed = Math.max(0, Math.floor((Date.now() - new Date(p.createdAt).getTime()) / (3600 * 1000)))
-
-        const walkingLikes = p.walkingLikes || 0
-        const civicVotes = p.civicVotes || 0
-        const debateHeat = p.debateHeat || 0
-        const toxicityFlags = p.toxicityFlags || 0
-
-        // Use strictly the stored radius_meters without read-time per-like coefficients
-        let finalRadius = p.radius_meters ?? 300
-        let shadowbanned = p.shadowbanned
-        let hit_city_wall = false
-
-        if (toxicityFlags >= 10) {
-          finalRadius = 0
-          shadowbanned = true
-        } else {
-          finalRadius = Math.max(300, finalRadius)
-          if (finalRadius >= 8000) {
-            finalRadius = 8000
-            hit_city_wall = true
-          }
-        }
+      // Calculate hoursPassed and rankingScore at read-time (due to relative time decay)
+      const postsWithMetrics = activePosts.map((p: any) => {
+        const hoursPassed = (Date.now() - new Date(p.createdAt).getTime()) / (3600 * 1000)
+        const currentRadius = p.radius_meters ?? 300
+        
+        const radiusScore = Math.log10(currentRadius || 1)
+        const recencyScore = 1 / (1 + hoursPassed)
+        const rankingScore = radiusScore * 1.5 + recencyScore * 1.0
 
         return {
           ...p,
-          hoursPassed,
-          radius_meters: Math.round(finalRadius),
-          shadowbanned,
-          hit_city_wall,
-          likes: walkingLikes,
-          seconds: civicVotes,
-          dislikes: debateHeat,
-          objections: toxicityFlags,
-          userReaction: p.userReactions?.[userIdStr] || null,
-          userVote: p.userVotes?.[userIdStr] || null,
+          hoursPassed: Math.max(0, Math.floor(hoursPassed)),
+          currentRadius,
+          rankingScore,
+          likes: p.walkingLikes || p.likes || 0,
+          seconds: p.civicVotes || p.seconds || 0,
+          dislikes: p.debateHeat || p.dislikes || 0,
+          objections: p.toxicityFlags || p.objections || 0,
+          userReaction: p.userReactions?.[userIdStr] || p.userReaction || null,
+          userVote: p.userVotes?.[userIdStr] || p.userVote || null,
           userName: p.userName || 'Anonymous Citizen',
           userRole: p.userRole || 'citizen'
         }
       })
 
-      return NextResponse.json({ success: true, posts: filteredPosts })
+      // Multi-weighted ranking score sorting descending
+      const sortedPosts = postsWithMetrics.sort((a: any, b: any) => {
+        const diff = b.rankingScore - a.rankingScore
+        if (Math.abs(diff) < 0.0001) {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        }
+        return diff
+      })
+
+      return NextResponse.json({ success: true, posts: sortedPosts })
     }
 
     // 2. Standard mode: fetch posts

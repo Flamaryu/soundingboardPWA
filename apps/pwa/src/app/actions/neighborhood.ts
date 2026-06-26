@@ -2,7 +2,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { sql } from 'drizzle-orm'
+import { sql, eq } from 'drizzle-orm'
 import { db, isMockDb, isPointInMultiPolygon, markDbAsFailed } from '../../db'
 import * as schema from '../../db/schema'
 
@@ -34,99 +34,75 @@ export interface ResolvedNeighborhood {
 
 // Get all neighborhoods for map rendering
 export async function getNeighborhoods() {
-  if (isMockDb()) {
-    const mockDb = readMockDb()
-    if (!mockDb) return []
-    // Combine neighborhood with district name for ease of use
-    return mockDb.neighborhoods.map((nh: any) => {
-      const dist = mockDb.planningDistricts.find((d: any) => d.id === nh.districtId)
-      return {
-        ...nh,
-        districtName: dist ? dist.name : 'Unknown'
-      }
-    })
-  }
-
   try {
-    // Select name, id, district_id, and convert boundary to GeoJSON for map display
-    const rows = await db.execute(sql`
-      SELECT 
-        n.id, 
-        n.name, 
-        n.district_id as "districtId", 
-        ST_AsGeoJSON(n.boundary) as boundary,
-        d.name as "districtName"
-      FROM neighborhoods n
-      JOIN planning_districts d ON n.district_id = d.id
-    `)
-    
-    return rows.rows.map((row: any) => ({
+    const rows = await db
+      .select({
+        id: schema.neighborhoods.id,
+        name: schema.neighborhoods.name,
+        districtId: schema.neighborhoods.districtId,
+        boundary: sql<string>`ST_AsGeoJSON(${schema.neighborhoods.boundary})`,
+        districtName: schema.planningDistricts.name,
+      })
+      .from(schema.neighborhoods)
+      .leftJoin(
+        schema.planningDistricts,
+        eq(schema.neighborhoods.districtId, schema.planningDistricts.id)
+      )
+
+    return rows.map((row: any) => ({
       id: row.id,
       name: row.name,
       districtId: row.districtId,
-      districtName: row.districtName,
-      boundary: JSON.parse(row.boundary)
+      districtName: row.districtName || 'Unknown',
+      boundary: row.boundary ? JSON.parse(row.boundary) : null
     }))
   } catch (err) {
     console.error('Failed to fetch neighborhoods from DB:', err)
-    markDbAsFailed()
-    const mockDb = readMockDb()
-    if (!mockDb) return []
-    return mockDb.neighborhoods.map((nh: any) => {
-      const dist = mockDb.planningDistricts.find((d: any) => d.id === nh.districtId)
-      return {
-        ...nh,
-        districtName: dist ? dist.name : 'Unknown'
-      }
-    })
+    throw err
   }
 }
 
 // Get council districts
 export async function getCouncilDistricts() {
-  if (isMockDb()) {
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.councilDistricts : []
-  }
   try {
-    const rows = await db.execute(sql`
-      SELECT id, name, ST_AsGeoJSON(boundary) as boundary
-      FROM council_districts
-    `)
-    return rows.rows.map((row: any) => ({
+    const rows = await db
+      .select({
+        id: schema.councilDistricts.id,
+        name: schema.councilDistricts.name,
+        boundary: sql<string>`ST_AsGeoJSON(${schema.councilDistricts.boundary})`,
+      })
+      .from(schema.councilDistricts)
+
+    return rows.map((row: any) => ({
       id: row.id,
       name: row.name,
-      boundary: JSON.parse(row.boundary)
+      boundary: row.boundary ? JSON.parse(row.boundary) : null
     }))
   } catch (err) {
     console.error('Failed to fetch council districts:', err)
-    markDbAsFailed()
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.councilDistricts : []
+    throw err
   }
 }
 
 // Get historic districts
 export async function getHistoricDistricts() {
-  if (isMockDb()) {
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.historicDistricts : []
-  }
   try {
-    const rows = await db.execute(sql`
-      SELECT id, name, ST_AsGeoJSON(boundary) as boundary
-      FROM historic_districts
-    `)
-    return rows.rows.map((row: any) => ({
+    const rows = await db
+      .select({
+        id: schema.historicDistricts.id,
+        name: schema.historicDistricts.name,
+        boundary: sql<string>`ST_AsGeoJSON(${schema.historicDistricts.boundary})`,
+      })
+      .from(schema.historicDistricts)
+
+    return rows.map((row: any) => ({
       id: row.id,
       name: row.name,
-      boundary: JSON.parse(row.boundary)
+      boundary: row.boundary ? JSON.parse(row.boundary) : null
     }))
   } catch (err) {
     console.error('Failed to fetch historic districts:', err)
-    markDbAsFailed()
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.historicDistricts : []
+    throw err
   }
 }
 

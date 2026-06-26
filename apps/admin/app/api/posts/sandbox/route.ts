@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getUpstashRedis } from '@echogram/shared-db'
+import { getUpstashRedis, propagatePostEcho, readSharedMockDb } from '@echogram/shared-db'
 
 function getInteractionWeight(distance: number): number {
   if (distance < 500) return 1.0;
@@ -120,6 +120,8 @@ export async function POST(request: Request) {
     }
 
     await redis.lpush('sandbox:posts', JSON.stringify(newPost))
+    await redis.set(`post:${newPost.id}`, JSON.stringify(newPost))
+    await propagatePostEcho(newPost.id, newPost.latitude, newPost.longitude, newPost.radius_meters)
 
     return NextResponse.json({ success: true, post: newPost })
   } catch (err: any) {
@@ -212,6 +214,8 @@ export async function PUT(request: Request) {
     if (posts.length > 0) {
       await redis.rpush('sandbox:posts', ...posts.map(p => JSON.stringify(p)))
     }
+    await redis.set(`post:${updatedPost.id}`, JSON.stringify(updatedPost))
+    await propagatePostEcho(updatedPost.id, updatedPost.latitude, updatedPost.longitude, updatedPost.radius_meters)
 
     return NextResponse.json({ success: true, post: updatedPost })
   } catch (err: any) {
@@ -232,7 +236,38 @@ export async function DELETE(request: Request) {
 
     if (!idParam) {
       // Clear entire sandbox feed
+      const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
+      for (const raw of rawPosts) {
+        try {
+          const p = typeof raw === 'string' ? JSON.parse(raw) : raw
+          if (p && p.id) {
+            await redis.del(`post:${p.id}`)
+          }
+        } catch (e) {}
+      }
       await redis.del('sandbox:posts')
+      await redis.del('geo:posts')
+      
+      const mockDb = readSharedMockDb()
+      if (mockDb) {
+        if (mockDb.neighborhoods) {
+          for (const nh of mockDb.neighborhoods) {
+            await redis.del(`feed:neighborhood:${nh.id}`)
+            if (nh.districtId) await redis.del(`feed:district:${nh.districtId}`)
+          }
+        }
+        if (mockDb.councilDistricts) {
+          for (const cd of mockDb.councilDistricts) {
+            await redis.del(`feed:council:${cd.id}`)
+          }
+        }
+        if (mockDb.historicDistricts) {
+          for (const hd of mockDb.historicDistricts) {
+            await redis.del(`feed:historic:${hd.id}`)
+          }
+        }
+      }
+      await redis.del('feed:city')
       return NextResponse.json({ success: true, message: "Sandbox feed successfully cleared" }, { status: 200 })
     }
 
@@ -251,6 +286,30 @@ export async function DELETE(request: Request) {
     await redis.del('sandbox:posts')
     if (filteredPosts.length > 0) {
       await redis.rpush('sandbox:posts', ...filteredPosts.map(p => JSON.stringify(p)))
+    }
+
+    // Evict deleted post from indices
+    await redis.del(`post:${idParam}`)
+    await redis.zrem('geo:posts', idParam)
+    await redis.srem('feed:city', idParam)
+    const mockDb = readSharedMockDb()
+    if (mockDb) {
+      if (mockDb.neighborhoods) {
+        for (const nh of mockDb.neighborhoods) {
+          await redis.srem(`feed:neighborhood:${nh.id}`, idParam)
+          if (nh.districtId) await redis.srem(`feed:district:${nh.districtId}`, idParam)
+        }
+      }
+      if (mockDb.councilDistricts) {
+        for (const cd of mockDb.councilDistricts) {
+          await redis.srem(`feed:council:${cd.id}`, idParam)
+        }
+      }
+      if (mockDb.historicDistricts) {
+        for (const hd of mockDb.historicDistricts) {
+          await redis.srem(`feed:historic:${hd.id}`, idParam)
+        }
+      }
     }
 
     return NextResponse.json({ success: true, message: `Post ${idParam} deleted` })

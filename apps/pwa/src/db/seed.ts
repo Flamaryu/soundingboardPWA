@@ -4,6 +4,7 @@ import { Pool } from 'pg'
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { sql } from 'drizzle-orm'
 import * as schema from './schema'
+import { propagatePostEcho, redis } from '@echogram/shared-db'
 
 // Helper to generate a MultiPolygon GeoJSON from a center point and dimensions
 function createMultiPolygon(lng: number, lat: number, w: number, h: number): any {
@@ -271,6 +272,116 @@ async function main() {
     }))
     await db.insert(schema.posts).values(postsWithDates)
     console.log('✅ Seeded users and posts.')
+
+    // Also seed Redis indices if Redis is available
+    if (redis) {
+      console.log('⚡ Redis connection found. Seeding redis indices for posts...')
+      
+      // Clear existing keys first
+      const existingRaw = await redis.lrange('sandbox:posts', 0, -1)
+      for (const raw of existingRaw) {
+        try {
+          const p = typeof raw === 'string' ? JSON.parse(raw) : raw
+          if (p && p.id) {
+            await redis.del(`post:${p.id}`)
+          }
+        } catch (e) {}
+      }
+      await redis.del('sandbox:posts')
+      await redis.del('geo:posts')
+      
+      if (mockDbData.neighborhoods) {
+        for (const nh of mockDbData.neighborhoods) {
+          await redis.del(`feed:neighborhood:${nh.id}`)
+          if (nh.districtId) await redis.del(`feed:district:${nh.districtId}`)
+        }
+      }
+      if (mockDbData.councilDistricts) {
+        for (const cd of mockDbData.councilDistricts) {
+          await redis.del(`feed:council:${cd.id}`)
+        }
+      }
+      if (mockDbData.historicDistricts) {
+        for (const hd of mockDbData.historicDistricts) {
+          await redis.del(`feed:historic:${hd.id}`)
+        }
+      }
+      await redis.del('feed:city')
+
+      // Loop over mocked posts and seed them
+      const postsToSeed = mockDbData.posts.map((item: any) => {
+        const isBeacon = !!item.isBeacon
+        const isDistrictBlast = !!item.pinnedCouncilDistrictId
+        const radius = isBeacon ? 300 : (isDistrictBlast ? 0 : 300)
+        
+        // Find default coordinates based on neighborhood centroid
+        let lat = 39.742
+        let lng = -75.548
+        const nh = mockDbData.neighborhoods.find((n: any) => n.id === item.neighborhoodId)
+        if (nh && nh.boundary && nh.boundary.coordinates) {
+          const getCentroid = (coords: any): { lat: number; lng: number } => {
+            let totalLng = 0, totalLat = 0, count = 0
+            coords.forEach((poly: any) => {
+              poly.forEach((ring: any) => {
+                ring.forEach((pt: any) => {
+                  totalLng += pt[0]
+                  totalLat += pt[1]
+                  count++
+                })
+              })
+            })
+            return count > 0 ? { lng: totalLng / count, lat: totalLat / count } : { lng: -75.548, lat: 39.742 }
+          }
+          const centroid = getCentroid(nh.boundary.coordinates)
+          lat = centroid.lat
+          lng = centroid.lng
+        }
+
+        const id = String(item.id)
+
+        return {
+          id,
+          title: item.title,
+          content: item.content,
+          type: item.type,
+          mediaUrl: item.mediaUrl || '',
+          mediaType: item.mediaUrl ? 'image' : 'none',
+          userType: item.userType || 'citizen',
+          userId: item.userId,
+          neighborhoodId: item.neighborhoodId,
+          createdAt: item.createdAt,
+          walkingLikes: 0,
+          civicVotes: 0,
+          debateHeat: 0,
+          ripples: 0,
+          toxicityFlags: 0,
+          hoursPassed: 0,
+          userName: mockDbData.users.find((u: any) => u.id === item.userId)?.name || 'Anonymous Citizen',
+          userRole: mockDbData.users.find((u: any) => u.id === item.userId)?.role || 'citizen',
+          neighborhoodName: nh?.name || 'Wilmington Sandbox',
+          latitude: lat,
+          longitude: lng,
+          radius_meters: radius,
+          shadowbanned: false,
+          hit_city_wall: isDistrictBlast ? true : false,
+          councilDistrictId: item.councilDistrictId || null,
+          isDistrictBlast,
+          isBeacon,
+          beaconExpiresAt: item.beaconExpiresAt || null,
+          userReactions: {},
+          userVotes: {}
+        }
+      })
+
+      if (postsToSeed.length > 0) {
+        await redis.lpush('sandbox:posts', ...postsToSeed.map((p: any) => JSON.stringify(p)))
+        for (const p of postsToSeed) {
+          await redis.set(`post:${p.id}`, JSON.stringify(p))
+          await propagatePostEcho(p.id, p.latitude, p.longitude, p.radius_meters)
+        }
+      }
+      console.log('✅ Seeded Redis geo index and feed sets.')
+    }
 
     console.log('🎉 Postgres successfully seeded with expanded layers.')
     client.release()
