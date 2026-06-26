@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useTransition, Suspense } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
@@ -29,7 +29,7 @@ import {
 import { reactToPost, createPost, castCivicVote } from '@/app/actions/posts'
 import { resolveAddress } from '@/app/actions/neighborhood'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
-import QRRedirectDetector from './QRRedirectDetector'
+
 import { getPostOriginNeighborhood, NEIGHBORHOOD_CENTROIDS, getNeighborhoodSpatialInfo } from '@/lib/wilmingtonSpatialMap'
 
 // Dynamically import Leaflet map to avoid server-side rendering issues
@@ -214,9 +214,7 @@ export default function FluidLayoutContainer({
   const [activeNhId, setActiveNhId] = useState(initialNhId)
   const [dbCredentialsMissing, setDbCredentialsMissing] = useState(false)
 
-  // QR Welcome Banner State
-  const [showQRWelcome, setShowQRWelcome] = useState(false)
-  const [isQrVisitor, setIsQrVisitor] = useState(false)
+
 
   // PWA Install Prompt Hook
   const { isInstallable, isInstalled, isIOS, isSafari, install } = usePWAInstall()
@@ -231,17 +229,12 @@ export default function FluidLayoutContainer({
   const [feedbackSuccess, setFeedbackSuccess] = useState(false)
   const [feedbackError, setFeedbackError] = useState('')
 
-  // Sync PWA dismissal variables & check QR code landing ref
+  // Sync PWA dismissal variables on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setDismissedInstall(sessionStorage.getItem('dismissed-pwa-install') === 'true')
       setDismissedIOS(sessionStorage.getItem('dismissed-pwa-ios') === 'true')
       setDismissedOpenApp(sessionStorage.getItem('dismissed-pwa-open') === 'true')
-
-      const params = new URLSearchParams(window.location.search)
-      if (params.get('ref') === 'qr' || params.get('source') === 'sticker') {
-        setShowQRWelcome(true)
-      }
     }
   }, [])
   
@@ -2049,33 +2042,7 @@ export default function FluidLayoutContainer({
         </div>
       </div>
 
-      <Suspense fallback={null}>
-        <QRRedirectDetector onDetect={setIsQrVisitor} />
-      </Suspense>
 
-      {/* ========================================================================= */}
-      {/* 1. THE "QR LANDING BRIDGE" WELCOME BANNER                                */}
-      {/* ========================================================================= */}
-      {(showQRWelcome || isQrVisitor) && (
-        <div className="fixed top-4 left-4 right-4 md:left-1/2 md:-translate-x-1/2 md:max-w-xl z-[60] pointer-events-auto bg-[#1c2541]/95 border-2 border-[#00f5d4]/40 backdrop-blur-md px-4 py-3.5 rounded-2xl shadow-2xl flex items-start justify-between gap-3 text-white transition-all animate-fadeIn duration-350">
-          <div className="flex gap-2.5">
-            <span className="text-xl animate-bounce">✨</span>
-            <div>
-              <h4 className="text-xs font-black text-[#00f5d4] uppercase tracking-wider">Wilmington Welcome!</h4>
-              <p className="text-[11px] text-slate-200 font-semibold leading-relaxed mt-1">
-                Welcome Wilmington Local! 302 built, no algorithms. Pick a profile type below to explore, or start posting right away.
-              </p>
-            </div>
-          </div>
-          <button 
-            onClick={() => { setShowQRWelcome(false); setIsQrVisitor(false); }}
-            className="p-1 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
-            aria-label="Dismiss welcome banner"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* ========================================================================= */}
       {/* 2. SMART PWA INSTALLATION & "OPEN APP" OVERLAYS                         */}

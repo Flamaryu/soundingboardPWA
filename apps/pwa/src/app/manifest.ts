@@ -23,6 +23,15 @@ export default function manifest(): MetadataRoute.Manifest {
         type: 'image/png',
         purpose: 'any'
       }
-    ]
-  }
+    ],
+    // PWA launch behavior: reuse existing client window on navigation
+    launch_handler: {
+      client_mode: 'existing-client-navigate'
+    },
+    // Register as a related webapp for getInstalledRelatedApps() detection
+    related_applications: [
+      { platform: 'webapp', url: '/manifest.json' }
+    ],
+    prefer_related_applications: false,
+  } as unknown as MetadataRoute.Manifest
 }
