@@ -74,8 +74,9 @@ export async function POST(request: Request) {
     }
 
     if (!finalAuthorId) {
-      const providedName = userName || authorName;
-      finalGuestName = providedName ? String(providedName).trim() : `Citizen-${Math.floor(1000 + Math.random() * 9000)}`;
+      const incomingName = (userName || authorName || '').trim();
+      const isGenericGuest = !incomingName || incomingName.toLowerCase() === 'guest';
+      finalGuestName = isGenericGuest ? `Citizen-${Math.floor(1000 + Math.random() * 9000)}` : incomingName;
     }
 
     const newPostId = crypto.randomUUID();

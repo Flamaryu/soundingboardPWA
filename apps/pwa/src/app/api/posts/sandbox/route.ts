@@ -246,6 +246,26 @@ export async function GET(request: Request) {
       toxicityFlags: post.toxicity_flags || 0,
     }));
 
+    console.log("⚖️ APPLYING ECHO GRAVITY SORT...");
+
+    formattedPosts.sort((a, b) => {
+      // 1. Calculate Post Age (in hours)
+      const now = new Date().getTime();
+      const ageHoursA = Math.max(0, (now - new Date(a.createdAt).getTime()) / (1000 * 60 * 60));
+      const ageHoursB = Math.max(0, (now - new Date(b.createdAt).getTime()) / (1000 * 60 * 60));
+
+      // 2. Calculate Radius Weight (Sum of positive interactions minus negative flags)
+      const radiusA = (a.walkingLikes * 1) + (a.civicVotes * 2) + (a.ripples * 3) - (a.toxicityFlags * 5);
+      const radiusB = (b.walkingLikes * 1) + (b.civicVotes * 2) + (b.ripples * 3) - (b.toxicityFlags * 5);
+
+      // 3. Composite Score Calculation
+      const scoreA = radiusA - (ageHoursA * 2);
+      const scoreB = radiusB - (ageHoursB * 2);
+
+      // Sort Descending (Highest score goes to index 0 / top of the feed)
+      return scoreB - scoreA;
+    });
+
     return NextResponse.json({ success: true, posts: formattedPosts });
   } catch (err: any) {
     console.error('Error in GET /api/posts/sandbox:', err)

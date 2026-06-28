@@ -1606,18 +1606,20 @@ export default function FluidLayoutContainer({
                           ? 'bg-purple-500/10 text-purple-400 border border-purple-500/20'
                           : 'bg-[#00f5d4]/10 text-[#00f5d4] border border-[#00f5d4]/20'
                       }`}>
-                        {post.userName[0]}
+                        {post.userName ? post.userName[0] : 'C'}
                       </div>
                       <div>
                         <div className="text-[11px] font-extrabold flex items-center gap-1.5 text-white">
                           {post.userName}
-                          <span className={`text-[8px] px-1 py-0.2 rounded font-black uppercase ${
-                            post.userRole === 'business'
-                              ? 'bg-purple-500/20 text-purple-300'
-                              : 'bg-[#00f5d4]/25 text-[#00f5d4]'
-                          }`}>
-                            {post.userRole}
-                          </span>
+                          {post.userRole && post.userRole !== 'guest' && post.userRole !== 'citizen' && (
+                            <span className={`text-[8px] px-1 py-0.2 rounded font-black uppercase ${
+                              post.userRole === 'business'
+                                ? 'bg-purple-500/20 text-purple-300'
+                                : 'bg-[#00f5d4]/25 text-[#00f5d4]'
+                            }`}>
+                              {post.userRole}
+                            </span>
+                          )}
                         </div>
                         <div className="text-[9px] text-slate-400 flex items-center gap-1 mt-0.5">
                           <Clock className="w-2.5 h-2.5" />

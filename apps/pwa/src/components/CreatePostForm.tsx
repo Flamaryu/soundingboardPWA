@@ -109,7 +109,7 @@ export default function CreatePostForm({
           longitude: lng,
           neighborhoodId: publishNhId,
           neighborhoodName: publishNhName,
-          authorName: currentUser?.name || currentUser?.systemUsername,
+          authorName: (currentUser?.name && currentUser.name.toLowerCase() !== 'guest') ? currentUser.name : ((currentUser?.systemUsername && currentUser.systemUsername.toLowerCase() !== 'guest') ? currentUser.systemUsername : undefined),
           userId: currentUser?.id || null,
           userRole: currentUser?.role || 'citizen',
           isAnonymous: isAnonymous,
