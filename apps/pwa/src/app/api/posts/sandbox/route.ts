@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
 import { db } from '@/db'
-import { posts, users, neighborhoods } from '@/db/schema'
+import { posts as postsTable, users, neighborhoods } from '@/db/schema'
 import { inArray, desc, eq } from 'drizzle-orm'
 import { getInteractionWeight } from '@/utils/proximity'
 import { failsModeration } from '@/utils/moderation'
@@ -190,7 +190,7 @@ export async function GET(request: Request) {
       if (postIds && postIds.length > 0) {
         const cleanIds = postIds.map(id => String(id).replace(/^post:/, ''));
         dbPosts = await db.query.posts.findMany({
-          where: inArray(posts.id, cleanIds),
+          where: inArray(postsTable.id, cleanIds),
           with: {
             author: true,
             neighborhood: true
@@ -202,11 +202,11 @@ export async function GET(request: Request) {
       if (dbPosts.length === 0) {
         let whereCondition: any = undefined;
         if (authorId) {
-          whereCondition = eq(posts.author_id, authorId);
+          whereCondition = eq(postsTable.author_id, authorId);
         }
         dbPosts = await db.query.posts.findMany({
           where: whereCondition,
-          orderBy: [desc(posts.created_at)],
+          orderBy: [desc(postsTable.created_at)],
           limit: 30,
           with: {
             author: true,
@@ -491,13 +491,13 @@ export async function PUT(request: Request) {
 
     // Update permanent metric vault in Neon Postgres
     try {
-      await db.update(posts).set({
+      await db.update(postsTable).set({
         walking_likes: Number(walkingLikes) || 0,
         civic_votes: Number(civicVotes) || 0,
         debate_heat: Number(debateHeat) || 0,
         ripples: Number(ripples) || 0,
         toxicity_flags: Number(toxicityFlags) || 0
-      }).where(eq(posts.id, String(id)));
+      }).where(eq(postsTable.id, String(id)));
     } catch (dbErr) {
       console.warn("Neon Postgres admin metric update warning:", dbErr);
     }
