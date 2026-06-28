@@ -166,11 +166,14 @@ export default function ProfileClient({ neighborhoods }: ProfileClientProps) {
 
   const handleSignOut = () => {
     localStorage.removeItem('echogram_auth_member')
+    localStorage.removeItem('echogram_user')
+    sessionStorage.clear()
+    document.cookie = 'echogram_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;'
     setIsAuthenticated(false)
     setSystemUsername('')
     setDisplayName('')
     setHomeNeighborhood('')
-    router.push('/')
+    window.location.href = '/'
   }
 
   const handleSelectHomeNeighborhood = async (nhName: string) => {

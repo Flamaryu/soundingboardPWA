@@ -31,6 +31,8 @@ export async function POST(request: Request) {
       longitude, 
       neighborhoodId, 
       userId,
+      userName,
+      authorName,
       locationTarget,
       radiusMeters
     } = body;
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
     }
 
     // Resolve active user ID
-    let activeUserId = userId;
+    let activeUserId: string | null = userId || null;
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get('echogram_session');
     if (sessionCookie && sessionCookie.value) {
@@ -57,25 +59,23 @@ export async function POST(request: Request) {
       } catch (e) {}
     }
 
-    // Ensure activeUserId exists in users table or create guest user row fallback
-    if (!activeUserId) {
-      activeUserId = 'guest_user_anon';
+    let finalAuthorId: string | null = null;
+    let finalGuestName: string | null = null;
+
+    if (activeUserId) {
+      try {
+        const existingUser = await db.select({ id: users.id }).from(users).where(eq(users.id, activeUserId)).limit(1);
+        if (existingUser && existingUser.length > 0) {
+          finalAuthorId = activeUserId;
+        }
+      } catch (err) {
+        console.warn('User verification check:', err);
+      }
     }
 
-    try {
-      const existingGuest = await db.select({ id: users.id }).from(users).where(eq(users.id, activeUserId)).limit(1);
-      if (!existingGuest || existingGuest.length === 0) {
-        await db.insert(users).values({
-          id: activeUserId,
-          email: `${activeUserId}@echogram.local`,
-          password_hash: 'guest_pass_hash',
-          system_username: activeUserId,
-          display_name: 'Anonymous Citizen',
-          role: 'citizen'
-        });
-      }
-    } catch (err) {
-      console.warn('User resolution fallback check:', err);
+    if (!finalAuthorId) {
+      const providedName = userName || authorName;
+      finalGuestName = providedName ? String(providedName).trim() : `Citizen-${Math.floor(1000 + Math.random() * 9000)}`;
     }
 
     const newPostId = crypto.randomUUID();
@@ -84,7 +84,8 @@ export async function POST(request: Request) {
     // 1. NEON INSERTION
     await db.insert(posts).values({
       id: newPostId,
-      author_id: activeUserId,
+      author_id: finalAuthorId,
+      guest_name: finalGuestName,
       title: title?.trim() || null,
       content: postContent,
       type: type || 'miniblog',

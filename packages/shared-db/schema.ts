@@ -77,7 +77,8 @@ export const users = pgTable('users', {
 
 export const posts = pgTable('posts', {
   id: text('id').primaryKey(),
-  author_id: text('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  author_id: text('author_id').references(() => users.id, { onDelete: 'cascade' }),
+  guest_name: text('guest_name'),
   neighborhood_id: integer('neighborhood_id').references(() => neighborhoods.id, { onDelete: 'set null' }),
   
   // Expanded Content Fields

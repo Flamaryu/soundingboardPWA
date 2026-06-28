@@ -68,7 +68,7 @@ async function calculateInteractionWeight(
         })
         .from(schema.posts)
         .innerJoin(schema.users, eq(schema.posts.author_id, schema.users.id))
-        .where(eq(schema.posts.id, postId))
+        .where(eq(schema.posts.id, String(postId)))
         .limit(1)
       
       if (postRow.length > 0 && postRow[0].neighborhoodId) {
@@ -241,7 +241,7 @@ async function recalculatePostProximityInPostgres(postId: number) {
     ...votes.filter((v: any) => v.vote === 'object')
   ].length
 
-  const postRows = await db.select({ createdAt: schema.posts.createdAt }).from(schema.posts).where(eq(schema.posts.id, postId)).limit(1)
+  const postRows = await db.select({ createdAt: schema.posts.createdAt }).from(schema.posts).where(eq(schema.posts.id, String(postId))).limit(1)
   if (postRows.length === 0) return null
 
   const proximity = computeProximity({
@@ -264,7 +264,7 @@ async function recalculatePostProximityInPostgres(postId: number) {
       shadowbanned: proximity.shadowbanned,
       hitCityWall: proximity.hitCityWall
     })
-    .where(eq(schema.posts.id, postId))
+    .where(eq(schema.posts.id, String(postId)))
     .returning()
 
   return rows[0]
