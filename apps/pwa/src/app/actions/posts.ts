@@ -362,48 +362,6 @@ export async function getFeedPosts(
     console.error("Error in getFeedPosts:", err);
     return [];
   }
-    console.error('Failed to get feed posts from DB, switching to mock:', err)
-    markDbAsFailed()
-    // Run fallback fetch
-    const mockDb = readMockDb()
-    if (!mockDb) return []
-    const activeNh = mockDb.neighborhoods.find((n: any) => n.id === neighborhoodId)
-    if (!activeNh) return []
-    let filteredPosts = []
-    if (radiusLevel === 1) {
-      filteredPosts = mockDb.posts.filter((p: any) => p.neighborhoodId === neighborhoodId && !p.shadowbanned)
-    } else if (radiusLevel === 2) {
-      const siblingNhIds = mockDb.neighborhoods
-        .filter((n: any) => n.districtId === activeNh.districtId)
-        .map((n: any) => n.id)
-      filteredPosts = mockDb.posts.filter((p: any) => siblingNhIds.includes(p.neighborhoodId) && !p.shadowbanned)
-    } else {
-      filteredPosts = mockDb.posts.filter((p: any) => !p.shadowbanned)
-    }
-    return filteredPosts.map((post: any) => {
-      const user = mockDb.users.find((u: any) => u.id === post.userId)
-      const nh = mockDb.neighborhoods.find((n: any) => n.id === post.neighborhoodId)
-      const reaction = (mockDb.postReactions || []).find(
-        (r: any) => r.postId === post.id && r.userId === activeUserId
-      )
-      const vote = (mockDb.civicVotes || []).find(
-        (v: any) => v.postId === post.id && v.userId === activeUserId
-      )
-      return {
-        ...post,
-        isProposal: post.isProposal ?? false,
-        likes: post.likes ?? 0,
-        seconds: post.seconds ?? 0,
-        dislikes: post.dislikes ?? 0,
-        objections: post.objections ?? 0,
-        userName: post.anonymousAuthorName ? post.anonymousAuthorName : (user ? user.name : 'Unknown User'),
-        userRole: post.anonymousAuthorName ? 'citizen' : (user ? user.role : 'citizen'),
-        neighborhoodName: nh ? nh.name : 'Wilmington',
-        userReaction: reaction ? reaction.type : null,
-        userVote: vote ? vote.vote : null
-      }
-    }).sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-  }
 }
 
 // Create a new post (enforces business foot traffic lock)
