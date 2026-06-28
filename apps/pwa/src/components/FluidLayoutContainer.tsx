@@ -598,7 +598,7 @@ export default function FluidLayoutContainer({
           lng = -75.5500;
         }
 
-        const response = await fetch(`/api/posts/sandbox?lat=${lat}&lng=${lng}&userId=${currentUser?.id || ''}&viewMode=${viewMode}&activeOverlay=${activeMapLayer}&subFeedType=${viewMode}&councilDistrictId=${activeCouncilDistrictId}&historicDistrictId=${activeHistoricDistrictId}&neighborhoodId=${activeNhId}`)
+        const response = await fetch(`/api/posts/sandbox?lat=${lat}&lng=${lng}&userId=${currentUser?.id || ''}&deviceId=${getOrCreateDeviceId()}&viewMode=${viewMode}&activeOverlay=${activeMapLayer}&subFeedType=${viewMode}&councilDistrictId=${activeCouncilDistrictId}&historicDistrictId=${activeHistoricDistrictId}&neighborhoodId=${activeNhId}`)
         if (response.status === 503) {
           setDbCredentialsMissing(true)
           setLoadingPosts(false)
@@ -894,6 +894,16 @@ export default function FluidLayoutContainer({
     })
   }
 
+  const getOrCreateDeviceId = (): string => {
+    if (typeof window === 'undefined') return 'server-device';
+    let devId = localStorage.getItem('echogram_device_id');
+    if (!devId) {
+      devId = crypto.randomUUID();
+      localStorage.setItem('echogram_device_id', devId);
+    }
+    return devId;
+  };
+
   // React to post
   const handleReact = async (
     postId: number | string, 
@@ -963,13 +973,43 @@ export default function FluidLayoutContainer({
           body: JSON.stringify({
             id: postId,
             userId: activeUserId,
+            deviceId: getOrCreateDeviceId(),
             reactionType,
             lat: userLocation?.lat ?? mapCenter.lat,
             lng: userLocation?.lng ?? mapCenter.lng
           })
         })
         if (res.ok) {
-          fetchPosts()
+          const data = await res.json()
+          if (data.updatedMetrics || data.metrics || data.post) {
+            const um = data.updatedMetrics || {}
+            const m = data.metrics || {}
+            const updated = data.post || {}
+            setPosts(prev => prev.map(p => {
+              if (String(p.id) === String(postId)) {
+                const wl = um.walkingLikes ?? m.walking_likes ?? updated.walking_likes ?? p.walkingLikes
+                const cv = um.civicVotes ?? m.civic_votes ?? updated.civic_votes ?? p.civicVotes
+                const dh = um.debateHeat ?? m.debate_heat ?? updated.debate_heat ?? p.debateHeat
+                const tf = um.toxicityFlags ?? m.toxicity_flags ?? updated.toxicity_flags ?? p.toxicityFlags
+                const rp = um.ripples ?? m.ripples ?? updated.ripples ?? p.ripples
+                return {
+                  ...p,
+                  walkingLikes: wl,
+                  civicVotes: cv,
+                  debateHeat: dh,
+                  ripples: rp,
+                  toxicityFlags: tf,
+                  likes: wl,
+                  seconds: cv,
+                  dislikes: dh,
+                  objections: tf,
+                }
+              }
+              return p
+            }))
+          } else {
+            fetchPosts()
+          }
         }
       } catch (err) {
         console.error('Failed to react in sandbox:', err)
@@ -1029,13 +1069,43 @@ export default function FluidLayoutContainer({
           body: JSON.stringify({
             id: postId,
             userId: activeUserId,
+            deviceId: getOrCreateDeviceId(),
             voteType,
             lat: userLocation?.lat ?? mapCenter.lat,
             lng: userLocation?.lng ?? mapCenter.lng
           })
         })
         if (res.ok) {
-          fetchPosts()
+          const data = await res.json()
+          if (data.updatedMetrics || data.metrics || data.post) {
+            const um = data.updatedMetrics || {}
+            const m = data.metrics || {}
+            const updated = data.post || {}
+            setPosts(prev => prev.map(p => {
+              if (String(p.id) === String(postId)) {
+                const wl = um.walkingLikes ?? m.walking_likes ?? updated.walking_likes ?? p.walkingLikes
+                const cv = um.civicVotes ?? m.civic_votes ?? updated.civic_votes ?? p.civicVotes
+                const dh = um.debateHeat ?? m.debate_heat ?? updated.debate_heat ?? p.debateHeat
+                const tf = um.toxicityFlags ?? m.toxicity_flags ?? updated.toxicity_flags ?? p.toxicityFlags
+                const rp = um.ripples ?? m.ripples ?? updated.ripples ?? p.ripples
+                return {
+                  ...p,
+                  walkingLikes: wl,
+                  civicVotes: cv,
+                  debateHeat: dh,
+                  ripples: rp,
+                  toxicityFlags: tf,
+                  likes: wl,
+                  seconds: cv,
+                  dislikes: dh,
+                  objections: tf,
+                }
+              }
+              return p
+            }))
+          } else {
+            fetchPosts()
+          }
         }
       } catch (err) {
         console.error('Failed to vote in sandbox:', err)

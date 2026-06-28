@@ -1,5 +1,9 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { NextResponse } from 'next/server'
-import { getUpstashRedis, propagatePostEcho, readSharedMockDb } from '@echogram/shared-db'
+import { db, posts as postsTable, users, getUpstashRedis, propagatePostEcho, readSharedMockDb } from '@echogram/shared-db'
+import { eq, desc } from 'drizzle-orm'
 
 function getInteractionWeight(distance: number): number {
   if (distance < 500) return 1.0;
@@ -9,23 +13,60 @@ function getInteractionWeight(distance: number): number {
 
 export async function GET() {
   try {
-    const redis = await getUpstashRedis()
-    if (!redis) {
-      return NextResponse.json({ success: false, error: 'Database credentials missing for this preview branch' }, { status: 503 })
-    }
-    
-    const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
-    const posts = rawPosts.map((item: any) => {
-      try {
-        if (typeof item === 'object' && item !== null) return item
-        return typeof item === 'string' ? JSON.parse(item) : item
-      } catch (e) {
-        console.error("Malformed sandbox post skipped:", item)
-        return null
-      }
-    }).filter(Boolean)
+    let mappedPosts: any[] = []
+    if (db) {
+      const rawPosts = await db
+        .select({
+          post: postsTable,
+          author: users,
+        })
+        .from(postsTable)
+        .leftJoin(users, eq(postsTable.author_id, users.id))
+        .orderBy(desc(postsTable.created_at))
 
-    return NextResponse.json({ success: true, posts })
+      mappedPosts = rawPosts.map(({ post, author }: any) => ({
+        id: post.id,
+        title: post.title || '',
+        content: post.content,
+        type: post.type || 'miniblog',
+        mediaUrl: post.media_url || '',
+        isProposal: Boolean(post.is_proposal),
+        createdAt: post.created_at,
+        userName: author?.system_username || author?.display_name || post.guest_name || 'Unknown Citizen',
+        userRole: author ? (author.role || 'citizen') : 'guest',
+        authorId: post.author_id || 'guest-' + post.id,
+        userId: post.author_id || 'guest-' + post.id,
+        walkingLikes: post.walking_likes || 0,
+        civicVotes: post.civic_votes || 0,
+        debateHeat: post.debate_heat || 0,
+        ripples: post.ripples || 0,
+        toxicityFlags: post.toxicity_flags || 0,
+      }))
+    }
+
+    if (mappedPosts.length === 0) {
+      const redis = await getUpstashRedis()
+      if (redis) {
+        const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
+        mappedPosts = rawPosts.map((item: any) => {
+          try {
+            if (typeof item === 'object' && item !== null) return item
+            return typeof item === 'string' ? JSON.parse(item) : item
+          } catch (e) {
+            return null
+          }
+        }).filter(Boolean)
+      }
+    }
+
+    return NextResponse.json(
+      { success: true, posts: mappedPosts },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+        },
+      }
+    )
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
   }

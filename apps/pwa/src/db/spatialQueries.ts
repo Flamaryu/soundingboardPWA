@@ -55,7 +55,7 @@ export function readMockDb() {
 }
 
 // Format mock post helper
-export function formatMockPost(post: any, mockDb: any, activeUserId: number) {
+export function formatMockPost(post: any, mockDb: any, activeUserId: number | string) {
   const user = mockDb.users.find((u: any) => u.id === post.userId)
   const nh = mockDb.neighborhoods.find((n: any) => n.id === post.neighborhoodId)
   const reaction = (mockDb.postReactions || []).find(
@@ -164,7 +164,7 @@ export async function fetchWalkingRadiusPosts(
 // 2. Fetch posts inside boundary
 export async function fetchBoundaryPosts(
   polygonGeoJson: any,
-  activeUserId = 1
+  activeUserId: string | number = '1'
 ) {
   console.log(`📡 Fetching posts in custom boundary polygon`)
 
@@ -211,48 +211,38 @@ export async function fetchBoundaryPosts(
         title: schema.posts.title,
         content: schema.posts.content,
         type: schema.posts.type,
-        mediaUrl: schema.posts.mediaUrl,
-        userType: schema.posts.userType,
-        neighborhoodId: schema.posts.neighborhoodId,
-        createdAt: schema.posts.createdAt,
-        isProposal: schema.posts.isProposal,
-        likes: schema.posts.likes,
-        seconds: schema.posts.seconds,
-        dislikes: schema.posts.dislikes,
-        objections: schema.posts.objections,
-        userName: schema.users.name,
+        mediaUrl: schema.posts.media_url,
+        neighborhoodId: schema.posts.neighborhood_id,
+        createdAt: schema.posts.created_at,
+        isProposal: schema.posts.is_proposal,
+        likes: schema.posts.walking_likes,
+        seconds: schema.posts.civic_votes,
+        dislikes: schema.posts.debate_heat,
+        objections: schema.posts.toxicity_flags,
+        userName: schema.users.display_name,
         userRole: schema.users.role,
         neighborhoodName: schema.neighborhoods.name,
-        userReaction: schema.postReactions.type,
+        userReaction: schema.postReactions.reaction_type,
         userVote: schema.civicVotes.vote,
-        councilDistrictId: schema.posts.councilDistrictId,
-        historicDistrictId: schema.posts.historicDistrictId,
-        isBeacon: schema.posts.isBeacon,
-        beaconExpiresAt: schema.posts.beaconExpiresAt,
-        isPinned: schema.posts.isPinned,
-        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
-        anonymousAuthorName: schema.posts.anonymousAuthorName
+        guestName: schema.posts.guest_name
       })
       .from(schema.posts)
-      .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
-      .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
-      .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
-      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
+      .leftJoin(schema.users, eq(schema.posts.author_id, schema.users.id))
+      .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhood_id, schema.neighborhoods.id))
+      .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.post_id), eq(schema.postReactions.user_id, String(activeUserId))))
+      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId as any)))
       .where(
-        and(
-          eq(schema.posts.shadowbanned, false),
-          sql`ST_Contains(
-            ST_SetSRID(ST_GeomFromGeoJSON(${geojsonStr}), 4326),
-            COALESCE(${schema.posts.location}, ST_SetSRID(ST_MakePoint(${schema.users.longitude}, ${schema.users.latitude}), 4326))::geometry
-          )`
-        )
+        sql`ST_Contains(
+          ST_SetSRID(ST_GeomFromGeoJSON(${geojsonStr}), 4326),
+          ST_SetSRID(ST_MakePoint(-75.55, 39.74), 4326)::geometry
+        )`
       )
       .orderBy(sql`created_at DESC`)
 
     return rows.map((r: any) => ({
       ...r,
-      userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
-      userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
+      userName: r.guestName ? r.guestName : r.userName,
+      userRole: r.guestName ? 'guest' : r.userRole
     }))
   } catch (err) {
     console.error('PostgreSQL boundary query failed, fallback to mock:', err)
@@ -264,7 +254,7 @@ export async function fetchBoundaryPosts(
 // 3. Fetch posts inside council district
 export async function fetchCouncilDistrictPosts(
   councilDistrictId: number,
-  activeUserId = 1
+  activeUserId: string | number = '1'
 ) {
   console.log(`📡 Fetching posts in Council District: ${councilDistrictId}`)
 
@@ -317,49 +307,39 @@ export async function fetchCouncilDistrictPosts(
         title: schema.posts.title,
         content: schema.posts.content,
         type: schema.posts.type,
-        mediaUrl: schema.posts.mediaUrl,
-        userType: schema.posts.userType,
-        neighborhoodId: schema.posts.neighborhoodId,
-        createdAt: schema.posts.createdAt,
-        isProposal: schema.posts.isProposal,
-        likes: schema.posts.likes,
-        seconds: schema.posts.seconds,
-        dislikes: schema.posts.dislikes,
-        objections: schema.posts.objections,
-        userName: schema.users.name,
+        mediaUrl: schema.posts.media_url,
+        neighborhoodId: schema.posts.neighborhood_id,
+        createdAt: schema.posts.created_at,
+        isProposal: schema.posts.is_proposal,
+        likes: schema.posts.walking_likes,
+        seconds: schema.posts.civic_votes,
+        dislikes: schema.posts.debate_heat,
+        objections: schema.posts.toxicity_flags,
+        userName: schema.users.display_name,
         userRole: schema.users.role,
         neighborhoodName: schema.neighborhoods.name,
-        userReaction: schema.postReactions.type,
+        userReaction: schema.postReactions.reaction_type,
         userVote: schema.civicVotes.vote,
-        councilDistrictId: schema.posts.councilDistrictId,
-        historicDistrictId: schema.posts.historicDistrictId,
-        isBeacon: schema.posts.isBeacon,
-        beaconExpiresAt: schema.posts.beaconExpiresAt,
-        isPinned: schema.posts.isPinned,
-        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
-        anonymousAuthorName: schema.posts.anonymousAuthorName
+        guestName: schema.posts.guest_name
       })
       .from(schema.posts)
-      .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
-      .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
+      .leftJoin(schema.users, eq(schema.posts.author_id, schema.users.id))
+      .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhood_id, schema.neighborhoods.id))
       .innerJoin(schema.councilDistricts, eq(schema.councilDistricts.id, councilDistrictId))
-      .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
-      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
+      .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.post_id), eq(schema.postReactions.user_id, String(activeUserId))))
+      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId as any)))
       .where(
-        and(
-          eq(schema.posts.shadowbanned, false),
-          sql`ST_Contains(
-            ${schema.councilDistricts.boundary}::geometry,
-            COALESCE(${schema.posts.location}, ST_SetSRID(ST_MakePoint(${schema.users.longitude}, ${schema.users.latitude}), 4326))::geometry
-          )`
-        )
+        sql`ST_Contains(
+          ${schema.councilDistricts.boundary}::geometry,
+          ST_SetSRID(ST_MakePoint(-75.55, 39.74), 4326)::geometry
+        )`
       )
       .orderBy(sql`created_at DESC`)
 
     return rows.map((r: any) => ({
       ...r,
-      userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
-      userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
+      userName: r.guestName ? r.guestName : r.userName,
+      userRole: r.guestName ? 'guest' : r.userRole
     }))
   } catch (err) {
     console.error('PostgreSQL council district query failed, fallback to mock:', err)
@@ -371,7 +351,7 @@ export async function fetchCouncilDistrictPosts(
 // 4. Fetch posts inside historic district
 export async function fetchHistoricDistrictPosts(
   historicDistrictId: number,
-  activeUserId = 1
+  activeUserId: string | number = '1'
 ) {
   console.log(`📡 Fetching posts in Historic District: ${historicDistrictId}`)
 
@@ -424,49 +404,39 @@ export async function fetchHistoricDistrictPosts(
         title: schema.posts.title,
         content: schema.posts.content,
         type: schema.posts.type,
-        mediaUrl: schema.posts.mediaUrl,
-        userType: schema.posts.userType,
-        neighborhoodId: schema.posts.neighborhoodId,
-        createdAt: schema.posts.createdAt,
-        isProposal: schema.posts.isProposal,
-        likes: schema.posts.likes,
-        seconds: schema.posts.seconds,
-        dislikes: schema.posts.dislikes,
-        objections: schema.posts.objections,
-        userName: schema.users.name,
+        mediaUrl: schema.posts.media_url,
+        neighborhoodId: schema.posts.neighborhood_id,
+        createdAt: schema.posts.created_at,
+        isProposal: schema.posts.is_proposal,
+        likes: schema.posts.walking_likes,
+        seconds: schema.posts.civic_votes,
+        dislikes: schema.posts.debate_heat,
+        objections: schema.posts.toxicity_flags,
+        userName: schema.users.display_name,
         userRole: schema.users.role,
         neighborhoodName: schema.neighborhoods.name,
-        userReaction: schema.postReactions.type,
+        userReaction: schema.postReactions.reaction_type,
         userVote: schema.civicVotes.vote,
-        councilDistrictId: schema.posts.councilDistrictId,
-        historicDistrictId: schema.posts.historicDistrictId,
-        isBeacon: schema.posts.isBeacon,
-        beaconExpiresAt: schema.posts.beaconExpiresAt,
-        isPinned: schema.posts.isPinned,
-        pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
-        anonymousAuthorName: schema.posts.anonymousAuthorName
+        guestName: schema.posts.guest_name
       })
       .from(schema.posts)
-      .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
-      .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
+      .leftJoin(schema.users, eq(schema.posts.author_id, schema.users.id))
+      .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhood_id, schema.neighborhoods.id))
       .innerJoin(schema.historicDistricts, eq(schema.historicDistricts.id, historicDistrictId))
-      .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
-      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
+      .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.post_id), eq(schema.postReactions.user_id, String(activeUserId))))
+      .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId as any)))
       .where(
-        and(
-          eq(schema.posts.shadowbanned, false),
-          sql`ST_Contains(
-            ${schema.historicDistricts.boundary}::geometry,
-            COALESCE(${schema.posts.location}, ST_SetSRID(ST_MakePoint(${schema.users.longitude}, ${schema.users.latitude}), 4326))::geometry
-          )`
-        )
+        sql`ST_Contains(
+          ${schema.historicDistricts.boundary}::geometry,
+          ST_SetSRID(ST_MakePoint(-75.55, 39.74), 4326)::geometry
+        )`
       )
       .orderBy(sql`created_at DESC`)
 
     return rows.map((r: any) => ({
       ...r,
-      userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
-      userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
+      userName: r.guestName ? r.guestName : r.userName,
+      userRole: r.guestName ? 'guest' : r.userRole
     }))
   } catch (err) {
     console.error('PostgreSQL historic district query failed, fallback to mock:', err)

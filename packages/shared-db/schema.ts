@@ -142,11 +142,13 @@ export const historicDistrictsRelations = relations(historicDistricts, ({ many }
 export const postReactions = pgTable('post_reactions', {
   id: text('id').primaryKey(),
   post_id: text('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
-  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  user_id: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  guest_id: text('guest_id'),
   reaction_type: text('reaction_type').notNull(),
   created_at: timestamp('created_at').defaultNow().notNull(),
 }, (table) => [
-  unique('post_user_reaction_unique').on(table.post_id, table.user_id)
+  unique('post_user_reaction_unique').on(table.post_id, table.user_id),
+  unique('post_guest_reaction_unique').on(table.post_id, table.guest_id)
 ])
 
 export const postReactionsRelations = relations(postReactions, ({ one }) => ({

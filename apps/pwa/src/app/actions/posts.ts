@@ -67,7 +67,7 @@ async function calculateInteractionWeight(
           neighborhoodId: schema.posts.neighborhood_id,
         })
         .from(schema.posts)
-        .innerJoin(schema.users, eq(schema.posts.author_id, schema.users.id))
+        .leftJoin(schema.users, eq(schema.posts.author_id, schema.users.id))
         .where(eq(schema.posts.id, String(postId)))
         .limit(1)
       

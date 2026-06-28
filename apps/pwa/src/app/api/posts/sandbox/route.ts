@@ -1,10 +1,11 @@
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
 import { db } from '@/db'
-import { posts as postsTable, users, neighborhoods } from '@/db/schema'
-import { inArray, desc, eq } from 'drizzle-orm'
+import { posts as postsTable, users, neighborhoods, postReactions } from '@/db/schema'
+import { inArray, desc, eq, or, and } from 'drizzle-orm'
 import { getInteractionWeight } from '@/utils/proximity'
 import { failsModeration } from '@/utils/moderation'
 import { readMockDb, getNeighborhoodCentroid, getHaversineDistance } from '@/db/spatialQueries'
@@ -100,7 +101,8 @@ export async function GET(request: Request) {
 
     const latStr = searchParams.get('lat')
     const lngStr = searchParams.get('lng')
-    const userIdStr = searchParams.get('userId') || '1'
+    const userIdStr = searchParams.get('userId') || ''
+    const deviceIdStr = searchParams.get('deviceId') || request.headers.get('x-device-id') || ''
     const authorId = searchParams.get('authorId')
     const viewMode = searchParams.get('viewMode') || 'city'
     const activeOverlay = searchParams.get('activeOverlay') || null
@@ -225,6 +227,36 @@ export async function GET(request: Request) {
       activeDbPosts = activeDbPosts.filter(p => String(p.author_id) === authorId || String(p.author?.system_username) === authorId);
     }
 
+    // Query post_reactions for active user/guest reactions
+    let userReactionsMap: Record<string, string> = {};
+    const validUserId = (userIdStr && userIdStr !== 'guest' && !userIdStr.startsWith('guest-')) ? userIdStr : null;
+    const validDeviceId = deviceIdStr || null;
+
+    if (activeDbPosts.length > 0 && (validUserId || validDeviceId)) {
+      try {
+        const postIdsToQuery = activeDbPosts.map(p => p.id);
+        let reactionConditions = inArray(postReactions.post_id, postIdsToQuery);
+        if (validUserId && validDeviceId) {
+          reactionConditions = and(reactionConditions, or(eq(postReactions.user_id, validUserId), eq(postReactions.guest_id, validDeviceId)))!;
+        } else if (validUserId) {
+          reactionConditions = and(reactionConditions, eq(postReactions.user_id, validUserId))!;
+        } else if (validDeviceId) {
+          reactionConditions = and(reactionConditions, eq(postReactions.guest_id, validDeviceId))!;
+        }
+
+        const matchedReactions = await db
+          .select({ postId: postReactions.post_id, reactionType: postReactions.reaction_type })
+          .from(postReactions)
+          .where(reactionConditions);
+
+        matchedReactions.forEach((r: any) => {
+          userReactionsMap[r.postId] = r.reactionType;
+        });
+      } catch (err) {
+        console.warn("User reaction hydration warning:", err);
+      }
+    }
+
     const formattedPosts = activeDbPosts.map(post => ({
       id: post.id,
       title: post.title || "",
@@ -236,14 +268,22 @@ export async function GET(request: Request) {
       userName: post.author?.display_name || post.author?.system_username || post.guest_name || "Anonymous Citizen",
       userRole: post.author ? (post.author.role || "citizen") : "guest",
       neighborhoodName: post.neighborhood?.name || "Wilmington",
-      userId: post.author_id,
-      authorId: post.author_id,
+      userId: post.author_id || "guest",
+      authorId: post.author_id || "guest",
+      userReaction: userReactionsMap[post.id] || null,
       likes: post.walking_likes || 0,
       walkingLikes: post.walking_likes || 0,
+      loveLocalCount: post.walking_likes || 0,
+      seconds: post.civic_votes || 0,
       civicVotes: post.civic_votes || 0,
+      secondThisCount: post.civic_votes || 0,
+      dislikes: post.debate_heat || 0,
       debateHeat: post.debate_heat || 0,
-      ripples: post.ripples || 0,
+      notForMeCount: post.debate_heat || 0,
+      objections: post.toxicity_flags || 0,
       toxicityFlags: post.toxicity_flags || 0,
+      badForCommCount: post.toxicity_flags || 0,
+      ripples: post.ripples || 0,
     }));
 
     console.log("⚖️ APPLYING ECHO GRAVITY SORT...");
