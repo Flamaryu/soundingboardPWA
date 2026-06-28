@@ -854,6 +854,10 @@ export default function FluidLayoutContainer({
         setAnchorType('live')
         
         // Enrich the post locally and append to state for immediate rendering
+        if (!res || !res.post) {
+          console.error("Post creation failed or payload is missing.");
+          return;
+        }
         const nh = neighborhoods.find(n => n.id === (res.post.neighborhoodId || activeNhId))
         const enrichedPost = {
           ...res.post,
