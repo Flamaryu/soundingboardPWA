@@ -1,7 +1,8 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server'
-import { db, schema } from '@echogram/shared-db'
+import { db } from '@echogram/shared-db'
+import * as schema from '@echogram/shared-db'
 
 export async function POST(request: Request) {
   try {
