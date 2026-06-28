@@ -114,7 +114,7 @@ async function calculateInteractionWeight(
             neighborhoodId: schema.users.neighborhood_id
           })
           .from(schema.users)
-          .where(eq(schema.users.id, userId))
+          .where(eq(schema.users.id, String(userId)))
           .limit(1)
         
         if (userRow.length > 0 && userRow[0].neighborhoodId) {
@@ -649,9 +649,9 @@ export async function createPost(data: {
   // PostgreSQL insertion
   try {
     const userRow = await db
-      .select({ role: schema.users.role, neighborhoodId: schema.users.neighborhoodId })
+      .select({ role: schema.users.role, neighborhoodId: schema.users.neighborhood_id })
       .from(schema.users)
-      .where(eq(schema.users.id, data.userId))
+      .where(eq(schema.users.id, String(data.userId)))
       .limit(1)
 
     if (userRow.length === 0) {
@@ -801,9 +801,9 @@ export async function getActiveUser(userId: number) {
         districtName: schema.planningDistricts.name
       })
       .from(schema.users)
-      .leftJoin(schema.neighborhoods, eq(schema.users.neighborhoodId, schema.neighborhoods.id))
+      .leftJoin(schema.neighborhoods, eq(schema.users.neighborhood_id, schema.neighborhoods.id))
       .leftJoin(schema.planningDistricts, eq(schema.neighborhoods.districtId, schema.planningDistricts.id))
-      .where(eq(schema.users.id, userId))
+      .where(eq(schema.users.id, String(userId)))
       .limit(1)
 
     return rows.length > 0 ? rows[0] : null
