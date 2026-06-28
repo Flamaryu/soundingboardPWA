@@ -150,7 +150,7 @@ export default function LeafletMap({
     if (isWalkingCentering) {
       map.setView([center.lat, center.lng], zoom, { animate: false })
     } else {
-      map.flyTo(finalCenter, zoom, { animate: true, padding: [24, 24] as any })
+      map.flyTo(finalCenter, zoom, { animate: true })
     }
     
     const timer = setTimeout(() => {
