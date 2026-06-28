@@ -2,7 +2,7 @@
 
 import * as fs from 'fs'
 import * as path from 'path'
-import { eq, inArray, sql, and } from 'drizzle-orm'
+import { eq, inArray, sql, and, desc } from 'drizzle-orm'
 import { db, isMockDb, markDbAsFailed } from '../../db'
 import * as schema from '../../db/schema'
 import { revalidatePath } from 'next/cache'
