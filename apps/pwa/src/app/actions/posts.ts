@@ -64,28 +64,21 @@ async function calculateInteractionWeight(
     try {
       const postRow = await db
         .select({
-          neighborhoodId: schema.posts.neighborhoodId,
-          latitude: schema.users.latitude,
-          longitude: schema.users.longitude
+          neighborhoodId: schema.posts.neighborhood_id,
         })
         .from(schema.posts)
-        .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
+        .innerJoin(schema.users, eq(schema.posts.author_id, schema.users.id))
         .where(eq(schema.posts.id, postId))
         .limit(1)
       
-      if (postRow.length > 0) {
-        if (typeof postRow[0].latitude === 'number' && typeof postRow[0].longitude === 'number') {
-          postLat = postRow[0].latitude
-          postLng = postRow[0].longitude
-        } else {
-          const nhCentroid = await db.execute(sql`
-            SELECT ST_X(ST_Centroid(boundary::geometry)) as lng, ST_Y(ST_Centroid(boundary::geometry)) as lat 
-            FROM neighborhoods WHERE id = ${postRow[0].neighborhoodId} LIMIT 1
-          `)
-          if (nhCentroid.rows.length > 0 && nhCentroid.rows[0].lng !== null) {
-            postLng = Number(nhCentroid.rows[0].lng)
-            postLat = Number(nhCentroid.rows[0].lat)
-          }
+      if (postRow.length > 0 && postRow[0].neighborhoodId) {
+        const nhCentroid = await db.execute(sql`
+          SELECT ST_X(ST_Centroid(boundary::geometry)) as lng, ST_Y(ST_Centroid(boundary::geometry)) as lat 
+          FROM neighborhoods WHERE id = ${postRow[0].neighborhoodId} LIMIT 1
+        `)
+        if (nhCentroid.rows.length > 0 && nhCentroid.rows[0].lng !== null) {
+          postLng = Number(nhCentroid.rows[0].lng)
+          postLat = Number(nhCentroid.rows[0].lat)
         }
       }
     } catch (err) {
@@ -118,27 +111,20 @@ async function calculateInteractionWeight(
       try {
         const userRow = await db
           .select({
-            latitude: schema.users.latitude,
-            longitude: schema.users.longitude,
-            neighborhoodId: schema.users.neighborhoodId
+            neighborhoodId: schema.users.neighborhood_id
           })
           .from(schema.users)
           .where(eq(schema.users.id, userId))
           .limit(1)
         
-        if (userRow.length > 0) {
-          if (typeof userRow[0].latitude === 'number' && typeof userRow[0].longitude === 'number') {
-            actLat = userRow[0].latitude
-            actLng = userRow[0].longitude
-          } else if (userRow[0].neighborhoodId) {
-            const nhCentroid = await db.execute(sql`
-              SELECT ST_X(ST_Centroid(boundary::geometry)) as lng, ST_Y(ST_Centroid(boundary::geometry)) as lat 
-              FROM neighborhoods WHERE id = ${userRow[0].neighborhoodId} LIMIT 1
-            `)
-            if (nhCentroid.rows.length > 0 && nhCentroid.rows[0].lng !== null) {
-              actLng = Number(nhCentroid.rows[0].lng)
-              actLat = Number(nhCentroid.rows[0].lat)
-            }
+        if (userRow.length > 0 && userRow[0].neighborhoodId) {
+          const nhCentroid = await db.execute(sql`
+            SELECT ST_X(ST_Centroid(boundary::geometry)) as lng, ST_Y(ST_Centroid(boundary::geometry)) as lat 
+            FROM neighborhoods WHERE id = ${userRow[0].neighborhoodId} LIMIT 1
+          `)
+          if (nhCentroid.rows.length > 0 && nhCentroid.rows[0].lng !== null) {
+            actLng = Number(nhCentroid.rows[0].lng)
+            actLat = Number(nhCentroid.rows[0].lat)
           }
         }
       } catch (err) {
