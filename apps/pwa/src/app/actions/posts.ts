@@ -205,43 +205,43 @@ function recalculatePostProximityInMockDb(postId: number, mockDb: any) {
 }
 
 async function recalculatePostProximityInPostgres(postId: number) {
-  const reactions = await db.select().from(schema.postReactions).where(eq(schema.postReactions.postId, postId))
-  const votes = await db.select().from(schema.civicVotes).where(eq(schema.civicVotes.postId, postId))
+  const reactions = await db.select().from(schema.postReactions).where(eq(schema.postReactions.post_id, String(postId)))
+  const votes = await db.select().from(schema.civicVotes).where(eq(schema.civicVotes.postId, String(postId)))
 
   const likesWeight = reactions
-    .filter((r: any) => r.type === 'love_local' || r.type === 'like')
-    .reduce((sum: number, r: any) => sum + Number(r.interactionWeight), 0)
+    .filter((r: any) => r.reaction_type === 'love_local' || r.reaction_type === 'like')
+    .reduce((sum: number, r: any) => sum + Number(r.interactionWeight || 1), 0)
 
   const secondsWeight = [
-    ...reactions.filter((r: any) => r.type === 'second_this' || r.type === 'second'),
+    ...reactions.filter((r: any) => r.reaction_type === 'second_this' || r.reaction_type === 'second'),
     ...votes.filter((v: any) => v.vote === 'agree')
-  ].reduce((sum: number, x: any) => sum + Number(x.interactionWeight), 0)
+  ].reduce((sum: number, x: any) => sum + Number(x.interactionWeight || 1), 0)
 
   const dislikesWeight = reactions
-    .filter((r: any) => r.type === 'not_for_me' || r.type === 'dislike')
-    .reduce((sum: number, r: any) => sum + Number(r.interactionWeight), 0)
+    .filter((r: any) => r.reaction_type === 'not_for_me' || r.reaction_type === 'dislike')
+    .reduce((sum: number, r: any) => sum + Number(r.interactionWeight || 1), 0)
 
   const objectionsWeight = reactions
-    .filter((r: any) => r.type === 'bad_for_community' || r.type === 'object')
-    .reduce((sum: number, r: any) => sum + Number(r.interactionWeight), 0)
+    .filter((r: any) => r.reaction_type === 'bad_for_community' || r.reaction_type === 'object')
+    .reduce((sum: number, r: any) => sum + Number(r.interactionWeight || 1), 0)
 
   const rawObjectionsCount = [
-    ...reactions.filter((r: any) => r.type === 'bad_for_community' || r.type === 'object'),
+    ...reactions.filter((r: any) => r.reaction_type === 'bad_for_community' || r.reaction_type === 'object'),
     ...votes.filter((v: any) => v.vote === 'object')
   ].length
 
-  const likesCount = reactions.filter((r: any) => r.type === 'love_local' || r.type === 'like').length
+  const likesCount = reactions.filter((r: any) => r.reaction_type === 'love_local' || r.reaction_type === 'like').length
   const secondsCount = [
-    ...reactions.filter((r: any) => r.type === 'second_this' || r.type === 'second'),
+    ...reactions.filter((r: any) => r.reaction_type === 'second_this' || r.reaction_type === 'second'),
     ...votes.filter((v: any) => v.vote === 'agree')
   ].length
-  const dislikesCount = reactions.filter((r: any) => r.type === 'not_for_me' || r.type === 'dislike').length
+  const dislikesCount = reactions.filter((r: any) => r.reaction_type === 'not_for_me' || r.reaction_type === 'dislike').length
   const objectionsCount = [
-    ...reactions.filter((r: any) => r.type === 'bad_for_community' || r.type === 'object'),
+    ...reactions.filter((r: any) => r.reaction_type === 'bad_for_community' || r.reaction_type === 'object'),
     ...votes.filter((v: any) => v.vote === 'object')
   ].length
 
-  const postRows = await db.select({ createdAt: schema.posts.createdAt }).from(schema.posts).where(eq(schema.posts.id, String(postId))).limit(1)
+  const postRows = await db.select({ createdAt: schema.posts.created_at }).from(schema.posts).where(eq(schema.posts.id, String(postId))).limit(1)
   if (postRows.length === 0) return null
 
   const proximity = computeProximity({
@@ -256,13 +256,10 @@ async function recalculatePostProximityInPostgres(postId: number) {
   const rows = await db
     .update(schema.posts)
     .set({
-      likes: likesCount,
-      seconds: secondsCount,
-      dislikes: dislikesCount,
-      objections: objectionsCount,
-      radiusMeters: proximity.radiusMeters,
-      shadowbanned: proximity.shadowbanned,
-      hitCityWall: proximity.hitCityWall
+      walking_likes: likesCount,
+      civic_votes: secondsCount,
+      debate_heat: dislikesCount,
+      toxicity_flags: objectionsCount,
     })
     .where(eq(schema.posts.id, String(postId)))
     .returning()
@@ -332,155 +329,39 @@ export async function getFeedPosts(
 
   // PostgreSQL Query
   try {
-    if (radiusLevel === 1) {
-      // Level 1: Exact Neighborhood ID Match
-      const rows = await db
-        .select({
-          id: schema.posts.id,
-          title: schema.posts.title,
-          content: schema.posts.content,
-          type: schema.posts.type,
-          mediaUrl: schema.posts.mediaUrl,
-          userType: schema.posts.userType,
-          neighborhoodId: schema.posts.neighborhoodId,
-          createdAt: schema.posts.createdAt,
-          isProposal: schema.posts.isProposal,
-          likes: schema.posts.likes,
-          seconds: schema.posts.seconds,
-          dislikes: schema.posts.dislikes,
-          objections: schema.posts.objections,
-          userName: schema.users.name,
-          userRole: schema.users.role,
-          neighborhoodName: schema.neighborhoods.name,
-          userReaction: schema.postReactions.type,
-          userVote: schema.civicVotes.vote,
-          councilDistrictId: schema.posts.councilDistrictId,
-          historicDistrictId: schema.posts.historicDistrictId,
-          isBeacon: schema.posts.isBeacon,
-          beaconExpiresAt: schema.posts.beaconExpiresAt,
-          isPinned: schema.posts.isPinned,
-          pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
-          anonymousAuthorName: schema.posts.anonymousAuthorName
-        })
-        .from(schema.posts)
-        .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
-        .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
-        .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
-        .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
-        .where(and(eq(schema.posts.neighborhoodId, neighborhoodId), eq(schema.posts.shadowbanned, false)))
-        .orderBy(sql`created_at DESC`)
-      
-      return rows.map((r: any) => ({
-        ...r,
-        userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
-        userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
-      }))
-    } else if (radiusLevel === 2) {
-      // Level 2: District-wide. Find sibling neighborhoods in the same planning district
-      const nhRow = await db
-        .select({ districtId: schema.neighborhoods.districtId })
-        .from(schema.neighborhoods)
-        .where(eq(schema.neighborhoods.id, neighborhoodId))
-        .limit(1)
-      
-      if (nhRow.length === 0) return []
-      const districtId = nhRow[0].districtId
+    const dbPosts = await db.query.posts.findMany({
+      orderBy: [desc(schema.posts.created_at)],
+      limit: 50,
+      with: {
+        author: true,
+        neighborhood: true
+      }
+    });
 
-      const siblingNhs = await db
-        .select({ id: schema.neighborhoods.id })
-        .from(schema.neighborhoods)
-        .where(eq(schema.neighborhoods.districtId, districtId))
-      
-      const siblingIds = siblingNhs.map((n: any) => n.id)
-
-      if (siblingIds.length === 0) return []
-
-      const rows = await db
-        .select({
-          id: schema.posts.id,
-          title: schema.posts.title,
-          content: schema.posts.content,
-          type: schema.posts.type,
-          mediaUrl: schema.posts.mediaUrl,
-          userType: schema.posts.userType,
-          neighborhoodId: schema.posts.neighborhoodId,
-          createdAt: schema.posts.createdAt,
-          isProposal: schema.posts.isProposal,
-          likes: schema.posts.likes,
-          seconds: schema.posts.seconds,
-          dislikes: schema.posts.dislikes,
-          objections: schema.posts.objections,
-          userName: schema.users.name,
-          userRole: schema.users.role,
-          neighborhoodName: schema.neighborhoods.name,
-          userReaction: schema.postReactions.type,
-          userVote: schema.civicVotes.vote,
-          councilDistrictId: schema.posts.councilDistrictId,
-          historicDistrictId: schema.posts.historicDistrictId,
-          isBeacon: schema.posts.isBeacon,
-          beaconExpiresAt: schema.posts.beaconExpiresAt,
-          isPinned: schema.posts.isPinned,
-          pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
-          anonymousAuthorName: schema.posts.anonymousAuthorName
-        })
-        .from(schema.posts)
-        .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
-        .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
-        .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
-        .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
-        .where(and(inArray(schema.posts.neighborhoodId, siblingIds), eq(schema.posts.shadowbanned, false)))
-        .orderBy(sql`created_at DESC`)
-      
-      return rows.map((r: any) => ({
-        ...r,
-        userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
-        userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
-      }))
-    } else {
-      // Level 3: City-wide
-      const rows = await db
-        .select({
-          id: schema.posts.id,
-          title: schema.posts.title,
-          content: schema.posts.content,
-          type: schema.posts.type,
-          mediaUrl: schema.posts.mediaUrl,
-          userType: schema.posts.userType,
-          neighborhoodId: schema.posts.neighborhoodId,
-          createdAt: schema.posts.createdAt,
-          isProposal: schema.posts.isProposal,
-          likes: schema.posts.likes,
-          seconds: schema.posts.seconds,
-          dislikes: schema.posts.dislikes,
-          objections: schema.posts.objections,
-          userName: schema.users.name,
-          userRole: schema.users.role,
-          neighborhoodName: schema.neighborhoods.name,
-          userReaction: schema.postReactions.type,
-          userVote: schema.civicVotes.vote,
-          councilDistrictId: schema.posts.councilDistrictId,
-          historicDistrictId: schema.posts.historicDistrictId,
-          isBeacon: schema.posts.isBeacon,
-          beaconExpiresAt: schema.posts.beaconExpiresAt,
-          isPinned: schema.posts.isPinned,
-          pinnedCouncilDistrictId: schema.posts.pinnedCouncilDistrictId,
-          anonymousAuthorName: schema.posts.anonymousAuthorName
-        })
-        .from(schema.posts)
-        .innerJoin(schema.users, eq(schema.posts.userId, schema.users.id))
-        .innerJoin(schema.neighborhoods, eq(schema.posts.neighborhoodId, schema.neighborhoods.id))
-        .leftJoin(schema.postReactions, and(eq(schema.posts.id, schema.postReactions.postId), eq(schema.postReactions.userId, activeUserId)))
-        .leftJoin(schema.civicVotes, and(eq(schema.posts.id, schema.civicVotes.postId), eq(schema.civicVotes.userId, activeUserId)))
-        .where(eq(schema.posts.shadowbanned, false))
-        .orderBy(sql`created_at DESC`)
-      
-      return rows.map((r: any) => ({
-        ...r,
-        userName: r.anonymousAuthorName ? r.anonymousAuthorName : r.userName,
-        userRole: r.anonymousAuthorName ? 'citizen' : r.userRole
-      }))
-    }
+    return dbPosts.map((post: any) => ({
+      id: post.id,
+      title: post.title || "",
+      content: post.content,
+      type: post.type || "miniblog",
+      mediaUrl: post.media_url || "",
+      isProposal: Boolean(post.is_proposal),
+      createdAt: post.created_at,
+      userName: post.author?.display_name || post.author?.system_username || post.guest_name || "Anonymous Citizen",
+      userRole: post.author ? (post.author.role || "citizen") : "guest",
+      neighborhoodName: post.neighborhood?.name || "Wilmington",
+      userId: post.author_id,
+      authorId: post.author_id,
+      likes: post.walking_likes || 0,
+      walkingLikes: post.walking_likes || 0,
+      civicVotes: post.civic_votes || 0,
+      debateHeat: post.debate_heat || 0,
+      ripples: post.ripples || 0,
+      toxicityFlags: post.toxicity_flags || 0,
+    }));
   } catch (err) {
+    console.error("Error in getFeedPosts:", err);
+    return [];
+  }
     console.error('Failed to get feed posts from DB, switching to mock:', err)
     markDbAsFailed()
     // Run fallback fetch
@@ -666,47 +547,18 @@ export async function createPost(data: {
       postNeighborhoodId = user.neighborhoodId
     }
 
-    if (data.isBeacon) {
-      await db
-        .update(schema.posts)
-        .set({ isBeacon: false, beaconExpiresAt: null })
-        .where(
-          and(
-            eq(schema.posts.userId, data.userId),
-            eq(schema.posts.neighborhoodId, postNeighborhoodId),
-            eq(schema.posts.isBeacon, true)
-          )
-        )
-    }
-
-    const randNum = Math.floor(Math.random() * 9000) + 1000
-    const anonymousAuthorName = `citizen${randNum}`
-
+    const newPostId = crypto.randomUUID()
     const inserted = await db
       .insert(schema.posts)
       .values({
-        title: data.title,
+        id: newPostId,
+        author_id: String(data.userId),
+        title: data.title || null,
         content: data.content,
-        type: data.type,
-        mediaUrl: data.mediaUrl || null,
-        userType: data.isAnonymous ? 'citizen' : user.role,
-        userId: data.userId,
-        neighborhoodId: postNeighborhoodId,
-        isProposal: data.isProposal ?? false,
-        likes: 0,
-        seconds: 0,
-        dislikes: 0,
-        objections: 0,
-        radiusMeters: 300,
-        shadowbanned: false,
-        hitCityWall: false,
-        councilDistrictId: data.councilDistrictId || null,
-        historicDistrictId: data.historicDistrictId || null,
-        isBeacon: data.isBeacon ?? false,
-        beaconExpiresAt: data.beaconExpiresAt ? new Date(data.beaconExpiresAt) : null,
-        isPinned: data.isPinned ?? false,
-        pinnedCouncilDistrictId: data.pinnedCouncilDistrictId || null,
-        anonymousAuthorName: data.isAnonymous ? anonymousAuthorName : null
+        type: data.type || 'miniblog',
+        media_url: data.mediaUrl || null,
+        is_proposal: Boolean(data.isProposal),
+        neighborhood_id: postNeighborhoodId ? Number(postNeighborhoodId) : null,
       })
       .returning()
 
@@ -789,13 +641,12 @@ export async function getActiveUser(userId: number) {
     const rows = await db
       .select({
         id: schema.users.id,
-        name: schema.users.name,
+        name: schema.users.display_name,
+        systemUsername: schema.users.system_username,
         email: schema.users.email,
         role: schema.users.role,
-        address: schema.users.address,
-        latitude: schema.users.latitude,
-        longitude: schema.users.longitude,
-        neighborhoodId: schema.users.neighborhoodId,
+        homeNeighborhood: schema.users.home_neighborhood,
+        neighborhoodId: schema.users.neighborhood_id,
         neighborhoodName: schema.neighborhoods.name,
         districtId: schema.neighborhoods.districtId,
         districtName: schema.planningDistricts.name
@@ -902,27 +753,26 @@ export async function reactToPost(
     const existing = await db
       .select()
       .from(schema.postReactions)
-      .where(and(eq(schema.postReactions.postId, postId), eq(schema.postReactions.userId, userId)))
+      .where(and(eq(schema.postReactions.post_id, String(postId)), eq(schema.postReactions.user_id, String(userId))))
       .limit(1)
 
     if (existing.length === 0) {
       // 1. Create reaction record
       await db.insert(schema.postReactions).values({ 
-        postId, 
-        userId, 
-        type: reactionType, 
-        interactionWeight: weight 
+        id: crypto.randomUUID(),
+        post_id: String(postId), 
+        user_id: String(userId), 
+        reaction_type: reactionType, 
       })
     } else {
       const oldReaction = existing[0]
-      if (oldReaction.type === reactionType) {
+      if (oldReaction.reaction_type === reactionType) {
         // 2. Delete reaction record (undo)
         await db.delete(schema.postReactions).where(eq(schema.postReactions.id, oldReaction.id))
       } else {
         // 3. Update reaction record to new type
         await db.update(schema.postReactions).set({ 
-          type: reactionType, 
-          interactionWeight: weight 
+          reaction_type: reactionType, 
         }).where(eq(schema.postReactions.id, oldReaction.id))
       }
     }
@@ -995,13 +845,13 @@ export async function castCivicVote(
     const existing = await db
       .select()
       .from(schema.civicVotes)
-      .where(and(eq(schema.civicVotes.postId, postId), eq(schema.civicVotes.userId, userId)))
+      .where(and(eq(schema.civicVotes.postId, String(postId)), eq(schema.civicVotes.userId, String(userId))))
       .limit(1)
 
     if (existing.length === 0) {
       await db.insert(schema.civicVotes).values({ 
-        postId, 
-        userId, 
+        postId: String(postId), 
+        userId: String(userId), 
         vote: voteType, 
         interactionWeight: weight 
       })
