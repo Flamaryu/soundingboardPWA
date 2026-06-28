@@ -3,7 +3,8 @@
 import * as fs from 'fs'
 import * as path from 'path'
 import { sql, eq } from 'drizzle-orm'
-import { db, isMockDb, isPointInMultiPolygon, markDbAsFailed } from '../../db'
+import { db, isMockDb, markDbAsFailed } from '../../db'
+import { isPointInMultiPolygon } from '@/utils/geo'
 import * as schema from '../../db/schema'
 
 import mockDbData from '../../db/mock_db.json'
@@ -34,6 +35,10 @@ export interface ResolvedNeighborhood {
 
 // Get all neighborhoods for map rendering
 export async function getNeighborhoods() {
+  if (isMockDb() || !db) {
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.neighborhoods : []
+  }
   try {
     const rows = await db
       .select({
@@ -57,13 +62,19 @@ export async function getNeighborhoods() {
       boundary: row.boundary ? JSON.parse(row.boundary) : null
     }))
   } catch (err) {
-    console.error('Failed to fetch neighborhoods from DB:', err)
-    throw err
+    console.warn('Failed to fetch neighborhoods from DB, falling back to mock:', err)
+    markDbAsFailed()
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.neighborhoods : []
   }
 }
 
 // Get council districts
 export async function getCouncilDistricts() {
+  if (isMockDb() || !db) {
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.councilDistricts : []
+  }
   try {
     const rows = await db
       .select({
@@ -79,13 +90,19 @@ export async function getCouncilDistricts() {
       boundary: row.boundary ? JSON.parse(row.boundary) : null
     }))
   } catch (err) {
-    console.error('Failed to fetch council districts:', err)
-    throw err
+    console.warn('Failed to fetch council districts from DB, falling back to mock:', err)
+    markDbAsFailed()
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.councilDistricts : []
   }
 }
 
 // Get historic districts
 export async function getHistoricDistricts() {
+  if (isMockDb() || !db) {
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.historicDistricts : []
+  }
   try {
     const rows = await db
       .select({
@@ -101,8 +118,10 @@ export async function getHistoricDistricts() {
       boundary: row.boundary ? JSON.parse(row.boundary) : null
     }))
   } catch (err) {
-    console.error('Failed to fetch historic districts:', err)
-    throw err
+    console.warn('Failed to fetch historic districts from DB, falling back to mock:', err)
+    markDbAsFailed()
+    const mockDb = readMockDb()
+    return mockDb ? mockDb.historicDistricts : []
   }
 }
 

@@ -2,10 +2,14 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server'
 import { Redis } from '@upstash/redis'
+import { db } from '@/db'
+import { posts, users, neighborhoods } from '@/db/schema'
+import { inArray, desc, eq } from 'drizzle-orm'
 import { getInteractionWeight } from '@/utils/proximity'
+import { failsModeration } from '@/utils/moderation'
 import { readMockDb, getNeighborhoodCentroid, getHaversineDistance } from '@/db/spatialQueries'
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
-import { propagatePostEcho } from '@echogram/shared-db'
+import { propagatePostEcho, isPointInBoundary } from '@echogram/shared-db'
 
 async function getUpstashRedis() {
   const hasUpstashEnv = !!process.env.UPSTASH_REDIS_REST_URL && !!process.env.UPSTASH_REDIS_REST_TOKEN
@@ -13,6 +17,43 @@ async function getUpstashRedis() {
     return Redis.fromEnv()
   }
   return null
+}
+
+function resolveNeighborhoodForCoords(lat: number, lng: number, mockDb: any, requestedNhId?: any, requestedNhName?: string, anchorType?: string) {
+  if (anchorType === 'home') {
+    if (requestedNhId) {
+      const nh = mockDb?.neighborhoods?.find((n: any) => n.id === Number(requestedNhId))
+      if (nh) return { id: nh.id, name: nh.name }
+    }
+    if (requestedNhName && requestedNhName !== 'Wilmington Sandbox' && requestedNhName !== '') {
+      const nh = mockDb?.neighborhoods?.find((n: any) => n.name.toLowerCase().includes(requestedNhName.toLowerCase()))
+      if (nh) return { id: nh.id, name: nh.name }
+    }
+  }
+  
+  // For live anchoring (or if no home neighborhood matched), evaluate exact spatial boundary of lat/lng
+  if (mockDb?.neighborhoods) {
+    for (const nh of mockDb.neighborhoods) {
+      if (nh.boundary && isPointInBoundary(lng, lat, nh.boundary)) {
+        return { id: nh.id, name: nh.name }
+      }
+    }
+    let closest = mockDb.neighborhoods[0]
+    let minDistance = Infinity
+    for (const nh of mockDb.neighborhoods) {
+      const centroid = getNeighborhoodCentroid(nh.boundary?.coordinates || [])
+      const dist = getHaversineDistance(lng, lat, centroid.lng, centroid.lat)
+      if (dist < minDistance) {
+        minDistance = dist
+        closest = nh
+      }
+    }
+    if (closest) {
+      return { id: closest.id, name: closest.name }
+    }
+  }
+  
+  return { id: 18, name: 'Center City' }
 }
 
 function isPostOutsideNativeNeighborhood(postLng: number, postLat: number, nativeNhId: number, currentRadius: number, mockDb: any): boolean {
@@ -52,6 +93,7 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url)
     const redis = await getUpstashRedis()
+    const mockDb = readMockDb()
     if (!redis) {
       return NextResponse.json({ success: true, posts: [] })
     }
@@ -59,6 +101,7 @@ export async function GET(request: Request) {
     const latStr = searchParams.get('lat')
     const lngStr = searchParams.get('lng')
     const userIdStr = searchParams.get('userId') || '1'
+    const authorId = searchParams.get('authorId')
     const viewMode = searchParams.get('viewMode') || 'city'
     const activeOverlay = searchParams.get('activeOverlay') || null
     const subFeedType = searchParams.get('subFeedType') || viewMode
@@ -73,32 +116,54 @@ export async function GET(request: Request) {
       neighborhoodId = null
     }
 
-    if (!latStr || !lngStr) {
-      return NextResponse.json({ success: false, error: 'Latitude and Longitude parameters are required' }, { status: 400 })
+    let parsedLat = parseFloat(latStr || '')
+    let parsedLng = parseFloat(lngStr || '')
+
+    if (isNaN(parsedLat) || isNaN(parsedLng) || !latStr || !lngStr || latStr === 'undefined' || lngStr === 'undefined' || latStr === 'null' || lngStr === 'null') {
+      parsedLat = 39.7450
+      parsedLng = -75.5500
     }
 
-    const readerLat = parseFloat(latStr)
-    const readerLng = parseFloat(lngStr)
-
-    if (isNaN(readerLat) || isNaN(readerLng)) {
-      return NextResponse.json({ success: false, error: 'Valid latitude and longitude are required' }, { status: 400 })
+    // Explicit coordinate validation: Ensure lat is ~39 (Y) and lng is ~-75 (X)
+    if (Math.abs(parsedLat) > 45 && Math.abs(parsedLng) <= 45) {
+      const temp = parsedLat
+      parsedLat = parsedLng
+      parsedLng = temp
     }
 
-    const mockDb = readMockDb()
+    const readerLat = parsedLat // Latitude (~39.7)
+    const readerLng = parsedLng // Longitude (~-75.5)
 
-    // 1. Fetch matched post IDs based on view mode (Zero geometry calculation at read-time)
+    // 1. Fetch matched post IDs based on view mode
     let postIds: string[] = []
 
     if (isWalking) {
-      // Tier 1: Walking Radius (strictly query georadius from geo index)
-      postIds = (await redis.exec(['GEORADIUS', 'geo:posts', readerLng, readerLat, 300, 'm'])) as string[]
+      // Tier 1: Walking Radius (query geo index using low-level execute)
+      try {
+        console.log("➡️ WALKING FEED INCOMING COORDS:", { readerLng, readerLat });
+        const redisClient = redis as any
+        const execFn = typeof redisClient.execute === 'function' ? redisClient.execute.bind(redisClient) : redisClient.exec.bind(redisClient)
+        const rawRes: any = await execFn([
+          "GEOSEARCH",
+          "geo:posts",
+          "FROMLONLAT",
+          String(readerLng),
+          String(readerLat),
+          "BYRADIUS",
+          "300",
+          "m"
+        ])
+        console.log("➡️ WALKING FEED RAW RES:", rawRes);
+        const geoResults = Array.isArray(rawRes?.[0]) ? rawRes[0] : (Array.isArray(rawRes) ? rawRes : [])
+        if (Array.isArray(geoResults)) postIds = geoResults.map((id: any) => String(id))
+      } catch (err) {
+        console.error("❌ CRITICAL GEOPROXIMITY ERROR CAPTURED:", err);
+      }
     } else if (subFeedType === 'neighborhood' || viewMode === 'neighborhood') {
-      // Tier 2: Neighborhood Feed
       if (neighborhoodId) {
         postIds = await redis.smembers(`feed:neighborhood:${neighborhoodId}`)
       }
     } else if (subFeedType === 'district' || viewMode === 'district') {
-      // Tier 3: District Feed
       let activeDistrictId = 1
       if (neighborhoodId && mockDb?.neighborhoods) {
         const nh = mockDb.neighborhoods.find((n: any) => n.id === neighborhoodId)
@@ -116,62 +181,72 @@ export async function GET(request: Request) {
         postIds = await redis.smembers(`feed:historic:${historicDistrictId}`)
       }
     } else {
-      // Tier 4: City Feed
       postIds = await redis.smembers('feed:city')
     }
 
-    let matchedPosts: any[] = []
-    if (postIds && postIds.length > 0) {
-      const keys = postIds.map(id => `post:${id}`)
-      const rawData = await redis.mget(...keys)
-      matchedPosts = rawData.map((item: any) => {
-        try {
-          if (typeof item === 'object' && item !== null) return item
-          return typeof item === 'string' ? JSON.parse(item) : item
-        } catch (e) {
-          return null
+    console.log("➡️ HYDRATING FROM NEON POSTGRES...");
+    let dbPosts: any[] = [];
+    try {
+      if (postIds && postIds.length > 0) {
+        const cleanIds = postIds.map(id => String(id).replace(/^post:/, ''));
+        dbPosts = await db.query.posts.findMany({
+          where: inArray(posts.id, cleanIds),
+          with: {
+            author: true,
+            neighborhood: true
+          }
+        });
+      }
+      
+      // Fallback: If no spatial matches found, fetch recent posts from Neon Postgres directly
+      if (dbPosts.length === 0) {
+        let whereCondition: any = undefined;
+        if (authorId) {
+          whereCondition = eq(posts.author_id, authorId);
         }
-      }).filter(Boolean)
+        dbPosts = await db.query.posts.findMany({
+          where: whereCondition,
+          orderBy: [desc(posts.created_at)],
+          limit: 30,
+          with: {
+            author: true,
+            neighborhood: true
+          }
+        });
+      }
+    } catch (dbErr) {
+      console.error("❌ NEON HYDRATION ERROR:", dbErr);
     }
 
-    // Filter out shadowbanned posts
-    const activePosts = matchedPosts.filter((p: any) => p.shadowbanned !== true)
+    console.log(`➡️ NEON HYDRATION SUCCESS: ${dbPosts.length} posts retrieved.`);
 
-    // Calculate hoursPassed and rankingScore at read-time (due to relative time decay)
-    const postsWithMetrics = activePosts.map((p: any) => {
-      const hoursPassed = (Date.now() - new Date(p.createdAt).getTime()) / (3600 * 1000)
-      const currentRadius = p.radius_meters ?? 300
-      
-      const radiusScore = Math.log10(currentRadius || 1)
-      const recencyScore = 1 / (1 + hoursPassed)
-      const rankingScore = radiusScore * 1.5 + recencyScore * 1.0
+    let activeDbPosts = dbPosts;
+    if (authorId) {
+      activeDbPosts = activeDbPosts.filter(p => String(p.author_id) === authorId || String(p.author?.system_username) === authorId);
+    }
 
-      return {
-        ...p,
-        hoursPassed: Math.max(0, Math.floor(hoursPassed)),
-        currentRadius,
-        rankingScore,
-        likes: p.walkingLikes || p.likes || 0,
-        seconds: p.civicVotes || p.seconds || 0,
-        dislikes: p.debateHeat || p.dislikes || 0,
-        objections: p.toxicityFlags || p.objections || 0,
-        userReaction: p.userReactions?.[userIdStr] || p.userReaction || null,
-        userVote: p.userVotes?.[userIdStr] || p.userVote || null,
-        userName: p.userName || 'Anonymous Citizen',
-        userRole: p.userRole || 'citizen'
-      }
-    })
+    const formattedPosts = activeDbPosts.map(post => ({
+      id: post.id,
+      title: post.title || "",
+      content: post.content,
+      type: post.type || "miniblog",
+      mediaUrl: post.media_url || "",
+      isProposal: Boolean(post.is_proposal),
+      createdAt: post.created_at,
+      userName: post.author?.display_name || post.author?.system_username || "Unknown Citizen",
+      userRole: post.author?.role || "citizen",
+      neighborhoodName: post.neighborhood?.name || "Wilmington",
+      userId: post.author_id,
+      authorId: post.author_id,
+      likes: post.walking_likes || 0,
+      walkingLikes: post.walking_likes || 0,
+      civicVotes: post.civic_votes || 0,
+      debateHeat: post.debate_heat || 0,
+      ripples: post.ripples || 0,
+      toxicityFlags: post.toxicity_flags || 0,
+    }));
 
-    // Multi-weighted ranking score sorting descending
-    const sortedPosts = postsWithMetrics.sort((a: any, b: any) => {
-      const diff = b.rankingScore - a.rankingScore
-      if (Math.abs(diff) < 0.0001) {
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      }
-      return diff
-    })
-
-    return NextResponse.json({ success: true, posts: sortedPosts })
+    return NextResponse.json({ success: true, posts: formattedPosts });
   } catch (err: any) {
     console.error('Error in GET /api/posts/sandbox:', err)
     return NextResponse.json({ success: false, error: err.message }, { status: 500 })
@@ -203,43 +278,62 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'Content is required' }, { status: 400 })
     }
 
+    // Production OpenAI Content Moderation Gate
+    const isFlagged = await failsModeration(`${title || ''} ${content}`)
+    if (isFlagged) {
+      return NextResponse.json({ error: "Community Guideline Violation: Content flagged by safety shield." }, { status: 422 })
+    }
+
     const redis = await getUpstashRedis()
     if (!redis) {
       return NextResponse.json({ success: false, error: 'Upstash Redis is not configured' }, { status: 503 })
     }
 
+    // Task 3: Identity Masking & Auth Detection
+    const isGuestUser = !userId && (!authorName || authorName === 'Guest')
+    
+    // Task 3 Rate Limiting: 10 posts per hour per client IP for Guests
+    if (isGuestUser) {
+      const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0] || request.headers.get('x-real-ip') || '127.0.0.1'
+      const rateLimitKey = `ratelimit:guest:${clientIp}`
+      const currentCount = await redis.incr(rateLimitKey)
+      if (currentCount === 1) {
+        await redis.expire(rateLimitKey, 3600)
+      }
+      if (currentCount > 10) {
+        return NextResponse.json({ success: false, error: "Guest post rate limit exceeded (Max 10 per hour). Please log in or sign up!" }, { status: 429 })
+      }
+    }
+
     const randNum = Math.floor(Math.random() * 9000) + 1000
-    const anonymousAuthorName = `citizen${randNum}`
+    const citizenMask = `Citizen-${randNum}`
     const id = 'sandbox_' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36)
     const createdAt = new Date().toISOString()
 
-    const hasProfileData = (authorName !== undefined && authorName !== null && authorName !== '') ||
-                           (userId !== undefined && userId !== null) ||
-                           (userRole !== undefined && userRole !== null && userRole !== '')
+    let finalUserId: any = userId || null
+    let finalUserName: string = authorName || 'Citizen'
+    let publicDisplayName: string = authorName || 'Citizen'
 
-    const useAnonymous = !!isAnonymous || !hasProfileData
+    if (isGuestUser) {
+      finalUserId = null
+      finalUserName = citizenMask
+      publicDisplayName = citizenMask
+    } else if (isAnonymous) {
+      // Authenticated member with Post Anonymously checked: retain relational userId for validation, override public display name
+      finalUserId = userId
+      publicDisplayName = citizenMask
+      finalUserName = citizenMask
+    } else {
+      finalUserId = userId
+      publicDisplayName = authorName || citizenMask
+      finalUserName = authorName || citizenMask
+    }
 
-    const finalUserName = useAnonymous ? anonymousAuthorName : (authorName || anonymousAuthorName)
-    const finalUserId = useAnonymous ? 999 : (userId !== undefined && userId !== null ? Number(userId) : 999)
-    const finalUserRole = useAnonymous ? 'citizen' : (userRole || 'citizen')
-    const finalUserType = useAnonymous ? 'citizen' : (body.userType || finalUserRole)
+    const finalUserRole = isGuestUser || isAnonymous ? 'citizen' : (userRole || 'citizen')
+    const finalUserType = isGuestUser || isAnonymous ? 'citizen' : (body.userType || finalUserRole)
 
     let postLat = typeof latitude === 'number' ? latitude : parseFloat(latitude)
     let postLng = typeof longitude === 'number' ? longitude : parseFloat(longitude)
-
-    if (anchorType === 'home' && finalUserId !== 999) {
-      const mockDb = readMockDb()
-      const user = mockDb?.users?.find((u: any) => u.id === finalUserId)
-      if (user && typeof user.latitude === 'number' && typeof user.longitude === 'number') {
-        if (user.latitude < 0) {
-          postLat = user.longitude
-          postLng = user.latitude
-        } else {
-          postLat = user.latitude
-          postLng = user.longitude
-        }
-      }
-    }
 
     const isBlast = !!isDistrictBlast && targetDistrictId !== undefined && targetDistrictId !== null
     const targetCdId = isBlast ? Number(targetDistrictId) : null
@@ -248,6 +342,9 @@ export async function POST(request: Request) {
     if (isNaN(postLat) || isNaN(postLng)) {
       return NextResponse.json({ success: false, error: 'Valid latitude and longitude are required' }, { status: 400 })
     }
+
+    const mockDb = readMockDb()
+    const resolvedNhInfo = resolveNeighborhoodForCoords(postLat, postLng, mockDb, body.neighborhoodId, neighborhoodName, anchorType)
 
     const newPost = {
       id,
@@ -258,7 +355,7 @@ export async function POST(request: Request) {
       mediaType: mediaType || 'none',
       userType: finalUserType,
       userId: finalUserId,
-      neighborhoodId: 5, // Forty Acres default
+      neighborhoodId: resolvedNhInfo.id,
       createdAt,
       isProposal: false,
       walkingLikes: 0,
@@ -267,9 +364,9 @@ export async function POST(request: Request) {
       ripples: 0,
       toxicityFlags: 0,
       hoursPassed: 0,
-      userName: finalUserName,
+      userName: publicDisplayName,
       userRole: finalUserRole,
-      neighborhoodName: neighborhoodName || 'Wilmington Sandbox',
+      neighborhoodName: resolvedNhInfo.name,
       latitude: postLat,
       longitude: postLng,
       radius_meters: finalRadius,
@@ -371,6 +468,19 @@ export async function PUT(request: Request) {
     }
 
     posts[targetPostIndex] = updatedPost
+
+    // Update permanent metric vault in Neon Postgres
+    try {
+      await db.update(posts).set({
+        walking_likes: Number(walkingLikes) || 0,
+        civic_votes: Number(civicVotes) || 0,
+        debate_heat: Number(debateHeat) || 0,
+        ripples: Number(ripples) || 0,
+        toxicity_flags: Number(toxicityFlags) || 0
+      }).where(eq(posts.id, String(id)));
+    } catch (dbErr) {
+      console.warn("Neon Postgres admin metric update warning:", dbErr);
+    }
 
     // Write back atomically
     await redis.del('sandbox:posts')

@@ -841,7 +841,7 @@ export async function getActiveUser(userId: number) {
 
 // Get all mock users to simulate switching accounts in MVP
 export async function getMockUsers() {
-  if (isMockDb()) {
+  if (isMockDb() || !db) {
     const mockDb = readMockDb()
     return mockDb ? mockDb.users : []
   }

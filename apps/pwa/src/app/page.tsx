@@ -13,16 +13,15 @@ export default async function Home({ searchParams }: PageProps) {
   // Await searchParams in Next.js 15+
   const params = await searchParams
   
-  const activeUserId = params.user ? Number(params.user) : 1 // Default: Marcus Williams
-
-  // Fetch mockUsers and activeUser first to resolve activeNhId
+  const activeUserId = params.user ? Number(params.user) : 0
   const mockUsers = await getMockUsers()
-  const activeUser = mockUsers.find((u: any) => u.id === activeUserId) || await getActiveUser(activeUserId)
+  const activeUser = activeUserId !== 0 ? (mockUsers.find((u: any) => u.id === activeUserId) || await getActiveUser(activeUserId)) : null
   
-  const activeNhId = params.nh ? Number(params.nh) : (activeUser ? activeUser.neighborhoodId : 5)
-
-  // Parallel data fetching on the server
   const neighborhoods = await getNeighborhoods()
+  const centerCityNh = neighborhoods?.find((n: any) => n.name.toLowerCase().includes('center city'))
+  const defaultNhId = centerCityNh ? centerCityNh.id : 29
+
+  const activeNhId = params.nh ? Number(params.nh) : (activeUser ? activeUser.neighborhoodId : defaultNhId)
   const councilDistricts = await getCouncilDistricts()
   const historicDistricts = await getHistoricDistricts()
 

@@ -24,38 +24,21 @@ export async function getUpstashRedis() {
 // Postgres connection setup (from legacy PWA src/db/index.ts)
 let pool: Pool | null = null
 let dbClient: any = null
-const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || 'postgresql://postgres:postgres@localhost:5432/wilmington_echogram'
-const hasEnvDb = !!(process.env.DATABASE_URL || process.env.POSTGRES_URL)
-let isMock = process.env.MOCK_DB === 'true' || !hasEnvDb
+const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL
+let isMock = false
 
-if (process.env.MOCK_DB !== 'true') {
+if (DATABASE_URL) {
   try {
     pool = new Pool({
       connectionString: DATABASE_URL,
-      connectionTimeoutMillis: 5000,
+      connectionTimeoutMillis: 10000,
     })
-    
-    pool.on('error', (err) => {
-      console.warn('⚠️ Asynchronous database pool error. Activating MOCK mode.', err.message)
-      isMock = true
-    })
-    
     dbClient = drizzle(pool, { schema })
-    
-    pool.connect()
-      .then((client) => {
-        console.log('🔌 PostgreSQL database connection verified successfully. Disabling mock mode.')
-        isMock = false
-        client.release()
-      })
-      .catch((err) => {
-        console.warn('⚠️ Local PostgreSQL connection unreachable. Continuing in MOCK database mode. Error:', err.message)
-        isMock = true
-      })
   } catch (err) {
-    console.warn('⚠️ PostGIS database initialization failed. Running in MOCK database mode.')
-    isMock = true
+    console.error('⚠️ Database connection error:', err)
   }
+} else {
+  isMock = true
 }
 
 export function isMockDb(): boolean {

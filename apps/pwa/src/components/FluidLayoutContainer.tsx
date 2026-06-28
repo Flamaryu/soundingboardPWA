@@ -29,6 +29,7 @@ import {
 import { reactToPost, createPost, castCivicVote } from '@/app/actions/posts'
 import { resolveAddress } from '@/app/actions/neighborhood'
 import { usePWAInstall } from '@/hooks/usePWAInstall'
+import CreatePostForm from './CreatePostForm'
 
 import { getPostOriginNeighborhood, NEIGHBORHOOD_CENTROIDS, getNeighborhoodSpatialInfo } from '@/lib/wilmingtonSpatialMap'
 
@@ -229,12 +230,20 @@ export default function FluidLayoutContainer({
   const [feedbackSuccess, setFeedbackSuccess] = useState(false)
   const [feedbackError, setFeedbackError] = useState('')
 
-  // Sync PWA dismissal variables on mount
+  const [authMember, setAuthMember] = useState<any>(null)
+
+  // Sync PWA dismissal variables and auth member state on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setDismissedInstall(sessionStorage.getItem('dismissed-pwa-install') === 'true')
       setDismissedIOS(sessionStorage.getItem('dismissed-pwa-ios') === 'true')
       setDismissedOpenApp(sessionStorage.getItem('dismissed-pwa-open') === 'true')
+      const saved = localStorage.getItem('echogram_auth_member')
+      if (saved) {
+        try {
+          setAuthMember(JSON.parse(saved))
+        } catch (e) {}
+      }
     }
   }, [])
   
@@ -268,29 +277,10 @@ export default function FluidLayoutContainer({
   })
   const [searchOverrideLocation, setSearchOverrideLocation] = useState<{ lat: number; lng: number; type: string } | null>(null)
   const [activePostId, setActivePostId] = useState<string | number | null>(null)
-  const [viewMode, setViewMode] = useState<'walking' | 'neighborhood' | 'district' | 'city' | 'council' | 'historic'>(() => {
-    if (typeof window !== 'undefined' && sessionStorage.getItem('pwa-is-gps-live') === 'true') {
-      return 'walking'
-    }
-    return 'neighborhood'
-  })
-  const [mapCenter, setMapCenter] = useState<{ lng: number; lat: number }>(() => {
-    if (typeof window !== 'undefined' && sessionStorage.getItem('pwa-is-gps-live') === 'true') {
-      const saved = sessionStorage.getItem('pwa-user-location')
-      if (saved) {
-        try {
-          return JSON.parse(saved)
-        } catch (e) {}
-      }
-    }
-    return { lng: -75.548, lat: 39.742 }
-  })
-  const [mapZoom, setMapZoom] = useState<number>(() => {
-    if (typeof window !== 'undefined' && sessionStorage.getItem('pwa-is-gps-live') === 'true') {
-      return 15
-    }
-    return 13
-  })
+  const [viewMode, setViewMode] = useState<'walking' | 'neighborhood' | 'district' | 'city' | 'council' | 'historic'>('neighborhood')
+  const [isMapCollapsed, setIsMapCollapsed] = useState(false)
+  const [mapCenter, setMapCenter] = useState<{ lng: number; lat: number }>({ lng: -75.548, lat: 39.742 })
+  const [mapZoom, setMapZoom] = useState<number>(13)
   const [cameraTrigger, setCameraTrigger] = useState(0)
 
   const triggerCameraMove = (center: { lng: number; lat: number }, zoom: number) => {
@@ -430,7 +420,9 @@ export default function FluidLayoutContainer({
   }
 
   // Track coordinates and active user
-  const currentUser = mockUsers.find(u => u.id === activeUserId) || activeUser
+  const currentUser = authMember 
+    ? { id: authMember.systemUsername, name: authMember.displayName || authMember.systemUsername, role: authMember.role || 'citizen' }
+    : { id: null, name: 'Guest', role: 'citizen' }
 
   // 1. Initialize user geolocation and mount state
   useEffect(() => {
@@ -462,6 +454,28 @@ export default function FluidLayoutContainer({
           if (typeof window !== 'undefined') {
             sessionStorage.setItem('pwa-user-location', JSON.stringify(coords))
             sessionStorage.setItem('pwa-is-gps-live', 'true')
+          }
+          // Dynamically match user's physical neighborhood
+          if (neighborhoods && neighborhoods.length > 0) {
+            let matched = neighborhoods[0]
+            let minD = Infinity
+            for (const nh of neighborhoods) {
+              if (nh.boundary && booleanPointInPolygon({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [coords.lng, coords.lat] } } as any, nh.boundary)) {
+                matched = nh
+                break
+              }
+              const centroid = getBoundaryCentroid(nh.boundary)
+              if (centroid) {
+                const d = getHaversineDistance(coords.lng, coords.lat, centroid.lng, centroid.lat)
+                if (d < minD) {
+                  minD = d
+                  matched = nh
+                }
+              }
+            }
+            if (matched) {
+              setActiveNhId(matched.id)
+            }
           }
           // Default to walking mode if GPS location is successfully fetched
           setViewMode('walking')
@@ -584,7 +598,7 @@ export default function FluidLayoutContainer({
           lng = -75.5500;
         }
 
-        const response = await fetch(`/api/posts/sandbox?lat=${lat}&lng=${lng}&userId=${activeUserId}&viewMode=${viewMode}&activeOverlay=${activeMapLayer}&subFeedType=${viewMode}&councilDistrictId=${activeCouncilDistrictId}&historicDistrictId=${activeHistoricDistrictId}&neighborhoodId=${activeNhId}`)
+        const response = await fetch(`/api/posts/sandbox?lat=${lat}&lng=${lng}&userId=${currentUser?.id || ''}&viewMode=${viewMode}&activeOverlay=${activeMapLayer}&subFeedType=${viewMode}&councilDistrictId=${activeCouncilDistrictId}&historicDistrictId=${activeHistoricDistrictId}&neighborhoodId=${activeNhId}`)
         if (response.status === 503) {
           setDbCredentialsMissing(true)
           setLoadingPosts(false)
@@ -734,8 +748,23 @@ export default function FluidLayoutContainer({
     startTransition(async () => {
       if (true) {
         try {
-          const lat = exactPublishCoordinates?.lat ?? userLocation?.lat ?? mapCenter.lat
-          const lng = exactPublishCoordinates?.lng ?? userLocation?.lng ?? mapCenter.lng
+          let lat = exactPublishCoordinates?.lat ?? userLocation?.lat ?? mapCenter.lat
+          let lng = exactPublishCoordinates?.lng ?? userLocation?.lng ?? mapCenter.lng
+          let publishNhId: any = activeNhId
+          let publishNhName = ''
+
+          if (anchorType === 'home' && authMember?.homeNeighborhood) {
+            const homeNh = neighborhoods.find(n => n.name.toLowerCase().includes(authMember.homeNeighborhood.toLowerCase()))
+            if (homeNh) {
+              publishNhId = homeNh.id
+              publishNhName = homeNh.name
+              const centroid = getBoundaryCentroid(homeNh.boundary)
+              if (centroid) {
+                lat = centroid.lat
+                lng = centroid.lng
+              }
+            }
+          }
           
           let evaluatedMediaType = 'none'
           if (mediaUrl && mediaUrl.trim()) {
@@ -753,8 +782,10 @@ export default function FluidLayoutContainer({
               mediaType: evaluatedMediaType,
               latitude: lat,
               longitude: lng,
+              neighborhoodId: publishNhId,
+              neighborhoodName: publishNhName,
               authorName: currentUser?.name,
-              userId: activeUserId,
+              userId: currentUser?.id || null,
               userRole: currentUser?.role,
               isAnonymous: isAnonymous,
               isDistrictBlast: blastToCouncil,
@@ -1136,6 +1167,21 @@ export default function FluidLayoutContainer({
     if (p.type === 'story' && !flags.enableStories) return false
     if (p.type === 'short' && !flags.enableVideoShorts) return false
     
+    // For walking feed, the backend has already validated spatial proximity for the payload. Render unconditionally!
+    if (viewMode === 'walking') {
+      let postLat = p.latitude
+      let postLng = p.longitude
+      if (typeof postLat !== 'number' || typeof postLng !== 'number') {
+        const resolved = getPostCoordinates(p)
+        postLat = resolved.lat
+        postLng = resolved.lng
+      }
+      if (typeof postLat === 'number' && typeof postLng === 'number' && userLocation && userLocation.lat && userLocation.lng) {
+        p.distance_meters = getHaversineDistance(userLocation.lng, userLocation.lat, postLng, postLat)
+      }
+      return true
+    }
+
     // Proximity/radius filtering: check distance <= radius_meters
     let postLat = p.latitude
     let postLng = p.longitude
@@ -1154,64 +1200,16 @@ export default function FluidLayoutContainer({
         ? { lat: 39.7447, lng: -75.5484 }
         : userLocation;
       const isFeedCenterInvalid = !feedCenter || !feedCenter.lat || !feedCenter.lng || feedCenter.lat === 0 || feedCenter.lng === 0;
-      const refCenter = (viewMode === 'walking' && !isUserLocationInvalid)
-        ? userLocation
-        : (isFeedCenterInvalid ? baselineCoordinates : feedCenter);
+      const refCenter = isFeedCenterInvalid ? baselineCoordinates : feedCenter;
 
       const dist = getHaversineDistance(refCenter.lng, refCenter.lat, postLng, postLat)
       p.distance_meters = dist
       userDistance = dist
     }
 
-    // Base Condition for ALL feeds: distance <= post's radius_meters
+    // Base Condition for ALL other feeds: distance <= post's radius_meters
     if (userDistance > radius) {
       return false
-    }
-
-    // Billboard leak check for Walking Distance Feed
-    if (viewMode === 'walking') {
-      const isBillboard = p.type === 'DISTRICT_BILLBOARD' || p.councilDistrictId !== null || p.historicDistrictId !== null
-      if (isBillboard) {
-        let isUserInside = false
-        const isUserLocationInvalid = !userLocation || !userLocation.lat || !userLocation.lng || userLocation.lat === 0 || userLocation.lng === 0;
-        const baselineCoordinates = isUserLocationInvalid ? { lat: 39.7447, lng: -75.5484 } : userLocation;
-        const refCenter = (viewMode === 'walking' && !isUserLocationInvalid)
-          ? userLocation
-          : (!feedCenter || !feedCenter.lat || !feedCenter.lng ? baselineCoordinates : feedCenter);
-
-        if (p.councilDistrictId !== null && p.councilDistrictId !== undefined) {
-          const cd = councilDistricts.find((d: any) => d.id === p.councilDistrictId)
-          if (cd && cd.boundary) {
-            const point = {
-              type: 'Feature',
-              properties: {},
-              geometry: { type: 'Point', coordinates: [refCenter.lng, refCenter.lat] }
-            }
-            try {
-              isUserInside = booleanPointInPolygon(point as any, cd.boundary)
-            } catch (err) {
-              isUserInside = false
-            }
-          }
-        } else if (p.historicDistrictId !== null && p.historicDistrictId !== undefined) {
-          const hd = historicDistricts.find((d: any) => d.id === p.historicDistrictId)
-          if (hd && hd.boundary) {
-            const point = {
-              type: 'Feature',
-              properties: {},
-              geometry: { type: 'Point', coordinates: [refCenter.lng, refCenter.lat] }
-            }
-            try {
-              isUserInside = booleanPointInPolygon(point as any, hd.boundary)
-            } catch (err) {
-              isUserInside = false
-            }
-          }
-        }
-        if (!isUserInside) {
-          return false
-        }
-      }
     }
 
     // Council / Historic Feed strict isolation checks
@@ -1335,9 +1333,65 @@ export default function FluidLayoutContainer({
   }
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-[#0b132b] flex flex-col">
-      {/* 1. Full-screen Interactive Background Map */}
-      <div className="absolute inset-0 z-0 h-full w-full">
+    <div className="w-screen h-screen relative flex flex-col bg-[#0b132b] overflow-hidden">
+      {/* GLOBAL SCREEN ROOT FLOATING CONTROLS (Z-50) */}
+      {/* Top-Left Block (Badge & Overlay Dropdown) */}
+      <div className={`absolute left-4 z-50 pointer-events-auto transition-all duration-300 ${
+        isMapCollapsed ? 'top-2 flex flex-row items-center gap-2 scale-90 origin-left' : 'top-4 flex flex-col gap-2'
+      }`}>
+        <div className="bg-[#1c2541]/95 border border-[#00f5d4]/30 backdrop-blur-md px-3.5 py-1.5 rounded-2xl flex items-center gap-2.5 shadow-xl w-fit">
+          <Compass className="w-4 h-4 text-[#00f5d4] animate-spin-slow" />
+          <div>
+            <h1 className="text-[11px] font-black tracking-wider text-white uppercase">Echogram PWA</h1>
+            <p className="text-[8px] text-[#00f5d4] font-semibold tracking-wide">LIVE ALPHA</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1.5 bg-[#1c2541]/95 border border-slate-700/50 backdrop-blur-md p-1.5 rounded-2xl shadow-xl select-none w-fit">
+          <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider px-1.5">Map Overlay:</span>
+          <select
+            value={activeMapLayer}
+            onChange={(e) => {
+              const val = e.target.value as 'neighborhood' | 'council' | 'historic'
+              setActiveMapLayer(val)
+              if (val === 'neighborhood') {
+                setViewMode('neighborhood')
+              } else if (val === 'council') {
+                setViewMode('council')
+              } else if (val === 'historic') {
+                setViewMode('historic')
+              }
+            }}
+            className="bg-transparent text-[10px] text-white font-extrabold border-none outline-none pr-2 cursor-pointer animate-fadeIn"
+          >
+            <option value="neighborhood" className="bg-[#1c2541] text-white">🏡 Neighborhoods</option>
+            <option value="council" className="bg-[#1c2541] text-white">🏛️ Council Districts</option>
+            <option value="historic" className="bg-[#1c2541] text-white">📜 Historic Districts</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Top-Right Block (Auth / Profile Button) */}
+      <div className={`absolute right-4 z-50 pointer-events-auto transition-all duration-300 ${
+        isMapCollapsed ? 'top-2 scale-90 origin-right' : 'top-4'
+      }`}>
+        <button
+          onClick={() => router.push('/profile')}
+          className={`bg-[#1c2541]/95 border backdrop-blur-md px-3.5 py-2 rounded-2xl shadow-xl flex items-center gap-2 text-[11px] font-bold transition-colors cursor-pointer ${
+            authMember 
+              ? 'border-slate-700/50 text-white hover:bg-[#25325c]' 
+              : 'border-[#00f5d4]/50 text-[#00f5d4] hover:bg-[#00f5d4]/10 animate-pulse'
+          }`}
+        >
+          <UserIcon className="w-4 h-4 text-[#00f5d4]" />
+          <span>{authMember ? `@${authMember.systemUsername}` : 'Sign Up / Log In'}</span>
+        </button>
+      </div>
+
+      {/* 1. Full-screen Interactive Background Map Wrapper */}
+      <div className={`w-full transition-all duration-300 ease-in-out origin-top relative z-0 isolation-isolate flex-shrink-0 ${
+        isMapCollapsed ? 'h-[12vh]' : 'h-[45vh]'
+      }`}>
         <DynamicLeafletMap
           neighborhoods={neighborhoods}
           councilDistricts={councilDistricts}
@@ -1355,7 +1409,7 @@ export default function FluidLayoutContainer({
           cameraTrigger={cameraTrigger}
           setSearchOverrideLocation={setSearchOverrideLocation}
           highlightedPostId={activePostId}
-          sheetState={sheetState}
+          sheetState={isMapCollapsed ? 'collapsed' : 'half'}
           onSelectNeighborhood={(id) => {
             setActiveNhId(id)
             setViewMode('neighborhood')
@@ -1396,127 +1450,19 @@ export default function FluidLayoutContainer({
         />
       </div>
 
-      {/* Top Floating Mini Header */}
-      <div className="absolute top-4 left-4 right-4 z-10 pointer-events-none flex justify-between items-center">
-        <div className="bg-[#1c2541]/95 border border-[#d90429]/30 backdrop-blur-md px-3.5 py-2 rounded-2xl pointer-events-auto flex items-center gap-2.5 shadow-xl">
-          <Compass className="w-5 h-5 text-[#d90429] animate-spin-slow" />
-          <div>
-            <h1 className="text-xs font-black tracking-wider text-white uppercase">Echogram PWA</h1>
-            <p className="text-[9px] text-[#00f5d4] font-semibold tracking-wide">PREVIEW MODE ACTIVE</p>
+      {/* 2. Timeline Feed Pane (Flattened Structural Sibling to Map) */}
+      <div className="flex-1 flex flex-col overflow-hidden bg-[#121824] border-t border-slate-800/80 px-4 md:px-6 pt-3 pb-6 z-10">
+        
+        {/* Active Scope Header */}
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[10px] font-extrabold uppercase tracking-widest text-[#00f5d4] flex items-center gap-1.5 select-none">
+            <span className="w-2 h-2 rounded-full bg-[#00f5d4] animate-pulse"></span>
+            {activeScopeTitle()}
           </div>
         </div>
 
-        {/* User Account Switcher Dropdown */}
-        {flags.enableAccountSwitcher ? (
-          <div className="bg-[#1c2541]/95 border border-slate-700/50 backdrop-blur-md p-1 rounded-2xl pointer-events-auto shadow-xl flex items-center gap-1.5">
-            <UserIcon className="w-3.5 h-3.5 text-slate-400 ml-1.5" />
-            <select
-              value={activeUserId}
-              onChange={(e) => {
-                const val = Number(e.target.value)
-                setActiveUserId(val)
-                const current = new URLSearchParams(window.location.search)
-                current.set('user', String(val))
-                router.push(`/?${current.toString()}`)
-              }}
-              className="bg-transparent text-[11px] text-white font-bold border-none outline-none pr-3 cursor-pointer"
-            >
-              {mockUsers.map(u => (
-                <option key={u.id} value={u.id} className="bg-[#1c2541] text-white">
-                  {u.name} ({u.role})
-                </option>
-              ))}
-            </select>
-          </div>
-        ) : (
-          <div className="bg-[#1c2541]/95 border border-slate-700/50 backdrop-blur-md px-3 py-1.5 rounded-2xl pointer-events-auto shadow-xl flex items-center gap-1.5 text-[11px] text-white font-bold">
-            <UserIcon className="w-3.5 h-3.5 text-slate-400 animate-pulse" />
-            <span>{currentUser.name}</span>
-          </div>
-        )}
-      </div>
-
-      {/* Floating Map Layer Overlay Selector */}
-      <div className="absolute top-16 left-4 z-10 pointer-events-auto flex items-center gap-1.5 bg-[#1c2541]/95 border border-slate-700/50 backdrop-blur-md p-1.5 rounded-2xl shadow-xl select-none">
-        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider px-2">Map Overlay:</span>
-        <select
-          value={activeMapLayer}
-          onChange={(e) => {
-            const val = e.target.value as 'neighborhood' | 'council' | 'historic'
-            setActiveMapLayer(val)
-            // Automatically switch view mode corresponding to selected layer
-            if (val === 'neighborhood') {
-              setViewMode('neighborhood')
-            } else if (val === 'council') {
-              setViewMode('council')
-            } else if (val === 'historic') {
-              setViewMode('historic')
-            }
-          }}
-          className="bg-transparent text-[11px] text-white font-extrabold border-none outline-none pr-3 cursor-pointer animate-fadeIn"
-        >
-          <option value="neighborhood" className="bg-[#1c2541] text-white">🏡 Neighborhoods</option>
-          <option value="council" className="bg-[#1c2541] text-white">🏛️ Council Districts</option>
-          <option value="historic" className="bg-[#1c2541] text-white">📜 Historic Districts</option>
-        </select>
-      </div>
-
-      {/* 2. Drag-snap Snappable Bottom Sheet */}
-      <div
-        className={`absolute left-0 right-0 z-30 bg-[#121824]/98 border-t border-slate-700/50 shadow-2xl backdrop-blur-lg flex flex-col pointer-events-none ${
-          sheetState === 'expanded' && !isDragging ? 'rounded-t-none' : 'rounded-t-[36px]'
-        }`}
-        style={{
-          bottom: 0,
-          top: !isMounted
-            ? '0px'
-            : (isDragging 
-                ? `${translateY}px` 
-                : `${getSheetSnapY(sheetState)}px`),
-          transition: isDragging ? 'none' : 'top 0.4s cubic-bezier(0.18, 0.89, 0.32, 1.05)'
-        }}
-      >
-        {/* DRAG HANDLE BAR */}
-        <div className="relative w-full flex flex-col items-center py-3.5 select-none pointer-events-auto">
-          <div
-            className="w-full flex flex-col items-center cursor-grab active:cursor-grabbing"
-            onMouseDown={(e) => handleStartDrag(e.clientY)}
-            onTouchStart={(e) => handleStartDrag(e.touches[0].clientY)}
-          >
-            {/* Snap Drag Pill */}
-            <div className="w-12 h-1.5 bg-slate-600 rounded-full" />
-            
-            <div className="text-[10px] font-extrabold uppercase tracking-widest text-[#00f5d4] mt-2.5 flex items-center gap-1.5 pointer-events-none">
-              <span className="w-2 h-2 rounded-full bg-[#00f5d4] animate-pulse"></span>
-              {activeScopeTitle()}
-            </div>
-          </div>
-
-          {/* Toggle Close / Expand button */}
-          <button
-            onClick={() => {
-              setSheetState(prev => {
-                if (prev === 'collapsed') return 'half'
-                if (prev === 'half') return 'expanded'
-                return 'half'
-              })
-            }}
-            className="absolute right-5 top-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full p-1.5 transition-all text-xs flex items-center justify-center border border-slate-700 shadow-md"
-            aria-label="Toggle drawer"
-          >
-            {sheetState === 'expanded' ? (
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hover:text-white" />
-            ) : (
-              <ChevronUp className="w-3.5 h-3.5 text-[#00f5d4]" />
-            )}
-          </button>
-        </div>
-
-        {/* BOTTOM SHEET CORE SCROLLABLE CONTENT */}
-        <div className="flex-1 flex flex-col overflow-hidden px-4 md:px-6 pb-24 pointer-events-auto">
-          
-          {/* SEGMENTED CONTROL TAB BAR */}
-          <div className="flex bg-[#0b132b] p-1 border border-slate-700/50 rounded-2xl mb-4 gap-1 select-none">
+        {/* SEGMENTED CONTROL TAB BAR */}
+        <div className="flex bg-[#0b132b] p-1 border border-slate-700/50 rounded-2xl mb-3 gap-1 select-none">
             {(() => {
               const modes = 
                 activeMapLayer === 'council' 
@@ -1610,285 +1556,17 @@ export default function FluidLayoutContainer({
           )}
 
           {/* SCROLLABLE FEED LIST */}
-          <div className="flex flex-col gap-4 overflow-y-auto overscroll-contain w-full h-full pb-24">
-            
-            {/* Create Post Form */}
-            {showCreateForm && (
-              <form onSubmit={handleCreatePost} className="bg-[#1c2541]/80 border border-[#d90429]/30 p-5 rounded-2xl flex flex-col gap-3.5 animate-fadeIn">
-                <h3 className="text-xs font-black text-[#d90429] uppercase tracking-wider flex items-center gap-1.5">
-                  <Send className="w-3.5 h-3.5" /> Write Announcement
-                </h3>
-
-                {(() => {
-                  const isBusinessOrNonprofit = currentUser?.role === 'business' || currentUser?.role === 'nonprofit';
-                  return (
-                    <div className="flex flex-col gap-2 p-3 bg-[#0b132b]/50 border border-slate-700/30 rounded-2xl">
-                      <span className="text-[10px] uppercase font-black text-slate-400 tracking-wider flex items-center gap-1.5">
-                        ⚓ Spatial Anchor Location
-                      </span>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1">
-                        {!isBusinessOrNonprofit ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleAnchorTypeChange('live')}
-                              className={`flex items-center justify-center gap-2 p-2 rounded-xl text-[11px] font-bold transition-all duration-200 border ${
-                                anchorType === 'live'
-                                  ? 'bg-[#d90429]/20 border-[#d90429] text-white shadow-lg shadow-[#d90429]/10'
-                                  : 'bg-[#1c2541]/40 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
-                              }`}
-                            >
-                              <span>📍</span> Right Here (Live GPS)
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAnchorTypeChange('home')}
-                              className={`flex items-center justify-center gap-2 p-2 rounded-xl text-[11px] font-bold transition-all duration-200 border ${
-                                anchorType === 'home'
-                                  ? 'bg-[#d90429]/20 border-[#d90429] text-white shadow-lg shadow-[#d90429]/10'
-                                  : 'bg-[#1c2541]/40 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
-                              }`}
-                            >
-                              <span>🏠</span> My Neighborhood
-                            </button>
-                          </>
-                        ) : (
-                          <div className="flex flex-col sm:flex-row gap-1.5 col-span-2 w-full">
-                            <button
-                              type="button"
-                              onClick={() => handleAnchorTypeChange('home')}
-                              className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-xl text-[10px] md:text-[11px] font-bold transition-all duration-200 border ${
-                                anchorType === 'home'
-                                  ? 'bg-[#d90429]/20 border-[#d90429] text-white shadow-lg shadow-[#d90429]/10'
-                                  : 'bg-[#1c2541]/40 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
-                              }`}
-                            >
-                              <span>🏢</span> Primary Headquarters Address
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleAnchorTypeChange('live')}
-                              className={`flex-1 flex items-center justify-center gap-2 p-2 rounded-xl text-[10px] md:text-[11px] font-bold transition-all duration-200 border ${
-                                anchorType === 'live'
-                                  ? 'bg-[#d90429]/20 border-[#d90429] text-white shadow-lg shadow-[#d90429]/10'
-                                  : 'bg-[#1c2541]/40 border-slate-700/50 text-slate-400 hover:text-white hover:border-slate-600'
-                              }`}
-                            >
-                              <span>🚚</span> Mobile Dispatch / Pop-Up Event
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-[9px] text-slate-400/80 leading-relaxed mt-0.5 px-0.5">
-                        {anchorType === 'live' && "📍 Real-time GPS: Binds your announcement to your current location right now."}
-                        {anchorType === 'home' && (!isBusinessOrNonprofit ? "🏠 My Neighborhood: Places the announcement at your profile home neighborhood centroid." : "🏢 Headquarters Address: Coordinates map strictly to your registered storefront/office address.")}
-                      </p>
-                    </div>
-                  );
-                })()}
-
-                <div className="flex gap-1.5 bg-[#0b132b] p-0.5 rounded-lg border border-slate-700/30 w-fit">
-                  {([
-                    flags.enableMiniblogs && 'miniblog',
-                    flags.enableStories && 'story',
-                    flags.enableVideoShorts && 'short'
-                  ].filter(Boolean) as ('miniblog' | 'story' | 'short')[]).map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => setPostType(type)}
-                      className={`px-2.5 py-1 rounded text-[10px] font-bold uppercase ${
-                        postType === type ? 'bg-[#d90429]/25 text-[#d90429]' : 'text-slate-400'
-                      }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <input
-                    type="text"
-                    placeholder="Headline..."
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="bg-[#0b132b] border border-slate-700/50 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#d90429]"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <textarea
-                    placeholder="Type details..."
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    rows={3}
-                    className="bg-[#0b132b] border border-slate-700/50 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#d90429] resize-none"
-                  />
-                </div>
-
-                {postType !== 'miniblog' && (
-                  <div className="flex flex-col gap-1">
-                    <input
-                      type="text"
-                      placeholder="Image or Video URL..."
-                      value={mediaUrl}
-                      onChange={(e) => setMediaUrl(e.target.value)}
-                      className="bg-[#0b132b] border border-slate-700/50 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[#d90429]"
-                    />
-                  </div>
-                )}
-
-                {flags.enableCivicProposals && (
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      id="fluid-isProposal"
-                      checked={isProposal}
-                      onChange={(e) => setIsProposal(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded text-[#d90429] focus:ring-[#d90429] border-slate-700 bg-[#0b132b]"
-                    />
-                    <label htmlFor="fluid-isProposal" className="text-[10px] font-bold text-white cursor-pointer select-none">
-                      📢 Submit as Civic Community Proposal
-                    </label>
-                  </div>
-                )}
-
-                {flags.anonymousCitizenPosts && (
-                  <div className="flex items-center gap-1.5">
-                    <input
-                      type="checkbox"
-                      id="fluid-isAnonymous"
-                      checked={isAnonymous}
-                      onChange={(e) => setIsAnonymous(e.target.checked)}
-                      className="w-3.5 h-3.5 rounded text-[#d90429] focus:ring-[#d90429] border-slate-700 bg-[#0b132b]"
-                    />
-                    <label htmlFor="fluid-isAnonymous" className="text-[10px] font-bold text-white cursor-pointer select-none">
-                      🕵️‍♂️ Post Anonymously as Citizen
-                    </label>
-                  </div>
-                )}
-
-                {currentUser.role !== 'citizen' && (
-                  <div className="border-t border-slate-700/50 pt-3.5 flex flex-col gap-3.5 select-none">
-                    <h4 className="text-[10px] font-extrabold text-[#00f5d4] uppercase tracking-wider">Premium Marketing & Monetization Options</h4>
-                    
-                    {/* Blast to Council District */}
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          id="fluid-blastCouncil"
-                          checked={blastToCouncil}
-                          onChange={(e) => setBlastToCouncil(e.target.checked)}
-                          className="w-3.5 h-3.5 rounded text-[#d90429] focus:ring-[#d90429] border-slate-700 bg-[#0b132b]"
-                        />
-                        <label htmlFor="fluid-blastCouncil" className="text-[10px] font-bold text-white cursor-pointer select-none flex items-center gap-1">
-                          🚀 Blast to Council District boundary
-                        </label>
-                      </div>
-                      
-                      {blastToCouncil && (
-                        <div className="pl-5 flex items-center gap-2">
-                          <span className="text-[9px] text-slate-400 font-bold">Select target District:</span>
-                          <select
-                            value={targetCouncilId}
-                            onChange={(e) => setTargetCouncilId(Number(e.target.value))}
-                            className="bg-[#0b132b] border border-slate-700 text-[10px] text-white font-semibold rounded p-1 outline-none"
-                          >
-                            {councilDistricts.map((d: any) => (
-                              <option key={d.id} value={d.id}>{d.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Foot Traffic Beacon Drop */}
-                    <div className="flex flex-col gap-1.5 bg-[#d90429]/5 border border-[#d90429]/20 p-2.5 rounded-xl">
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          id="fluid-isBeacon"
-                          checked={isBeacon}
-                          onChange={(e) => setIsBeacon(e.target.checked)}
-                          className="w-3.5 h-3.5 rounded text-[#d90429] focus:ring-[#d90429] border-slate-700 bg-[#0b132b]"
-                        />
-                        <label htmlFor="fluid-isBeacon" className="text-[10px] font-bold text-white cursor-pointer select-none flex items-center gap-1">
-                          ⚡ Drop 2-Hour "Foot Traffic" Beacon <span className="text-[9px] text-[#00f5d4] font-black">($1.50 fee)</span>
-                        </label>
-                      </div>
-                      {isBeacon && (
-                        <p className="text-[9px] text-slate-400 pl-5 leading-relaxed">
-                          Dropped beacon targets your immediate walking radius. Nearby users within 4 blocks will see a glowing pulse on their map: <span className="text-[#00f5d4] font-semibold">"Fresh batch of pastries..."</span>
-                        </p>
-                      )}
-                    </div>
-
-                    {/* District Billboard Pinning */}
-                    <div className="flex flex-col gap-1.5 bg-yellow-500/5 border border-yellow-500/20 p-2.5 rounded-xl">
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="checkbox"
-                          id="fluid-isPinned"
-                          checked={isPinned}
-                          onChange={(e) => setIsPinned(e.target.checked)}
-                          className="w-3.5 h-3.5 rounded text-[#d90429] focus:ring-[#d90429] border-slate-700 bg-[#0b132b]"
-                        />
-                        <label htmlFor="fluid-isPinned" className="text-[10px] font-bold text-white cursor-pointer select-none flex items-center gap-1">
-                          📌 Pin as District Billboard <span className="text-[9px] text-yellow-500 font-black">($5.00 fee)</span>
-                        </label>
-                      </div>
-                      {isPinned && (
-                        <div className="pl-5 flex flex-col gap-2">
-                          <div className="flex items-center gap-2">
-                            <span className="text-[9px] text-slate-400 font-bold">Target district:</span>
-                            <select
-                              value={pinnedCouncilId}
-                              onChange={(e) => setPinnedCouncilId(Number(e.target.value))}
-                              className="bg-[#0b132b] border border-slate-700 text-[10px] text-white font-semibold rounded p-1 outline-none"
-                            >
-                              {councilDistricts.map((d: any) => (
-                                <option key={d.id} value={d.id}>{d.name}</option>
-                              ))}
-                            </select>
-                          </div>
-                          <p className="text-[9px] text-slate-400 leading-relaxed">
-                            Your post will remain pinned strictly within the boundaries of the selected Council District.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {formError && (
-                  <div className="text-[10px] text-red-400 bg-red-950/20 border border-red-500/10 p-2.5 rounded-xl font-medium">
-                    {formError}
-                  </div>
-                )}
-
-                <div className="flex justify-end gap-2 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowCreateForm(false)
-                      setAnchorType('live')
-                    }}
-                    className="px-3 py-1.5 text-slate-400 font-bold hover:text-white"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isPending}
-                    className="bg-[#d90429] hover:bg-[#b00320] text-white px-4 py-1.5 rounded-lg font-bold transition-all disabled:opacity-50"
-                  >
-                    {isPending ? 'Publishing...' : 'Publish'}
-                  </button>
-                </div>
-              </form>
-            )}
-
+          <div 
+            onScroll={(e) => {
+              const scrollTop = e.currentTarget.scrollTop
+              if (scrollTop > 30) {
+                setIsMapCollapsed(true)
+              } else if (scrollTop === 0) {
+                setIsMapCollapsed(false)
+              }
+            }}
+            className="flex flex-col gap-4 overflow-y-auto overscroll-contain w-full h-full pb-24"
+          >
             {/* Loading Indicator */}
             {loadingPosts ? (
               <div className="flex flex-col gap-3 py-12 items-center justify-center text-slate-500">
@@ -2184,7 +1862,6 @@ export default function FluidLayoutContainer({
             )}
           </div>
         </div>
-      </div>
 
 
 
@@ -2363,6 +2040,32 @@ export default function FluidLayoutContainer({
             </form>
           )}
         </div>
+      )}
+
+      {/* Standalone Animated Bottom-Sheet Overlay Portal */}
+      {showCreateForm && (
+        <>
+          <div 
+            className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-xs transition-opacity duration-300"
+            onClick={() => setShowCreateForm(false)} 
+          />
+          <div className="fixed inset-x-0 bottom-0 z-[9999] w-full max-w-2xl mx-auto bg-[#0b132b] border-t border-slate-800 rounded-t-2xl shadow-2xl p-6 pb-8 transition-transform duration-300 transform translate-y-0">
+            <CreatePostForm
+              isOpen={showCreateForm}
+              onClose={() => setShowCreateForm(false)}
+              onSuccess={() => fetchPosts()}
+              currentUser={currentUser}
+              authMember={authMember}
+              activeNhId={activeNhId}
+              neighborhoods={neighborhoods}
+              flags={flags}
+              exactPublishCoordinates={exactPublishCoordinates}
+              userLocation={userLocation}
+              mapCenter={mapCenter}
+              getBoundaryCentroid={getBoundaryCentroid}
+            />
+          </div>
+        </>
       )}
     </div>
   )

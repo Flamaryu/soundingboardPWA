@@ -130,28 +130,7 @@ export default function LeafletMap({
     const currentZoom = map.getZoom()
     const currentCenter = map.getCenter()
 
-    // Calculate dynamic padding offset based on sheetState to center markers in the visible map area
-    let offsetPixels = 0
-    if (typeof window !== 'undefined') {
-      if (sheetState === 'half') {
-        offsetPixels = window.innerHeight / 4
-      } else if (sheetState === 'collapsed') {
-        offsetPixels = 65
-      }
-    }
-
-    let finalCenter: [number, number] = [center.lat, center.lng]
-    if (offsetPixels > 0) {
-      try {
-        const targetLatLng = L.latLng(center.lat, center.lng)
-        const targetPoint = map.project(targetLatLng, zoom)
-        const offsetPoint = L.point(targetPoint.x, targetPoint.y + offsetPixels)
-        const offsetLatLng = map.unproject(offsetPoint, zoom)
-        finalCenter = [offsetLatLng.lat, offsetLatLng.lng]
-      } catch (e) {
-        console.warn('Offset calculation failed', e)
-      }
-    }
+    const finalCenter: [number, number] = [center.lat, center.lng]
 
     const centerDiff = Math.abs(currentCenter.lat - finalCenter[0]) + Math.abs(currentCenter.lng - finalCenter[1])
     const zoomDiff = Math.abs(currentZoom - zoom)
@@ -171,7 +150,7 @@ export default function LeafletMap({
     if (isWalkingCentering) {
       map.setView([center.lat, center.lng], zoom, { animate: false })
     } else {
-      map.flyTo(finalCenter, zoom, { animate: true })
+      map.flyTo(finalCenter, zoom, { animate: true, padding: [24, 24] as any })
     }
     
     const timer = setTimeout(() => {
@@ -179,7 +158,7 @@ export default function LeafletMap({
     }, 500)
 
     return () => clearTimeout(timer)
-  }, [cameraTrigger, sheetState])
+  }, [cameraTrigger])
 
   // Render Boundaries & Polygons
   useEffect(() => {

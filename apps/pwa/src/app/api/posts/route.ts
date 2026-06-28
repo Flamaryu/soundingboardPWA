@@ -256,16 +256,23 @@ export async function GET(request: Request) {
         neighborhoodId = null
       }
 
-      if (!latStr || !lngStr) {
-        return NextResponse.json({ success: false, error: 'Latitude and Longitude parameters are required' }, { status: 400 })
+      let parsedLat = parseFloat(latStr || '')
+      let parsedLng = parseFloat(lngStr || '')
+
+      if (isNaN(parsedLat) || isNaN(parsedLng) || !latStr || !lngStr || latStr === 'undefined' || lngStr === 'undefined' || latStr === 'null' || lngStr === 'null') {
+        parsedLat = 39.7450
+        parsedLng = -75.5500
       }
 
-      const readerLat = parseFloat(latStr)
-      const readerLng = parseFloat(lngStr)
-
-      if (isNaN(readerLat) || isNaN(readerLng)) {
-        return NextResponse.json({ success: false, error: 'Valid latitude and longitude are required' }, { status: 400 })
+      // Explicit coordinate validation: Ensure lat is ~39 (Y) and lng is ~-75 (X)
+      if (Math.abs(parsedLat) > 45 && Math.abs(parsedLng) <= 45) {
+        const temp = parsedLat
+        parsedLat = parsedLng
+        parsedLng = temp
       }
+
+      const readerLat = parsedLat // Latitude (~39.7)
+      const readerLng = parsedLng // Longitude (~-75.5)
 
       const mockDb = readMockDb()
 
@@ -273,8 +280,27 @@ export async function GET(request: Request) {
       let postIds: string[] = []
 
       if (isWalking) {
-        // Tier 1: Walking Radius (strictly query georadius from geo index)
-        postIds = (await redis.exec(['GEORADIUS', 'geo:posts', readerLng, readerLat, 300, 'm'])) as string[]
+        // Tier 1: Walking Radius (query geo index using low-level execute)
+        try {
+          console.log("➡️ WALKING FEED INCOMING COORDS:", { readerLng, readerLat });
+          const redisClient = redis as any
+          const execFn = typeof redisClient.execute === 'function' ? redisClient.execute.bind(redisClient) : redisClient.exec.bind(redisClient)
+          const rawRes: any = await execFn([
+            "GEOSEARCH",
+            "geo:posts",
+            "FROMLONLAT",
+            String(readerLng),
+            String(readerLat),
+            "BYRADIUS",
+            "300",
+            "m"
+          ])
+          console.log("➡️ WALKING FEED RAW RES:", rawRes);
+          const geoResults = Array.isArray(rawRes?.[0]) ? rawRes[0] : (Array.isArray(rawRes) ? rawRes : [])
+          if (Array.isArray(geoResults)) postIds = geoResults.map((id: any) => String(id))
+        } catch (err) {
+          console.error("❌ CRITICAL GEOPROXIMITY ERROR CAPTURED:", err);
+        }
       } else if (subFeedType === 'neighborhood' || viewMode === 'neighborhood') {
         // Tier 2: Neighborhood Feed
         if (neighborhoodId) {
@@ -305,9 +331,10 @@ export async function GET(request: Request) {
 
       let matchedPosts: any[] = []
       if (postIds && postIds.length > 0) {
-        const keys = postIds.map(id => `post:${id}`)
+        const keys = postIds.map(id => String(id).startsWith('post:') ? String(id) : `post:${id}`)
+        console.log("➡️ HYDRATING POST KEYS:", keys);
         const rawData = await redis.mget(...keys)
-        matchedPosts = rawData.map((item: any) => {
+        matchedPosts = (Array.isArray(rawData) ? rawData : []).map((item: any) => {
           try {
             if (typeof item === 'object' && item !== null) return item
             return typeof item === 'string' ? JSON.parse(item) : item
@@ -315,6 +342,7 @@ export async function GET(request: Request) {
             return null
           }
         }).filter(Boolean)
+        console.log("➡️ HYDRATED MATCHED POSTS COUNT:", matchedPosts.length);
       }
 
       // Filter out shadowbanned posts

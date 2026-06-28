@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, doublePrecision, customType, boolean, unique } from 'drizzle-orm/pg-core'
+import { pgTable, text, serial, integer, timestamp, doublePrecision, customType, boolean, unique, uuid } from 'drizzle-orm/pg-core'
 import { relations } from 'drizzle-orm'
 
 // Custom PostGIS MultiPolygon Type
@@ -65,44 +65,37 @@ export const neighborhoods = pgTable('neighborhoods', {
 })
 
 export const users = pgTable('users', {
-  id: serial('id').primaryKey(),
-  name: text('name').notNull(),
+  id: text('id').primaryKey(),
   email: text('email').notNull().unique(),
-  role: text('role', { enum: ['citizen', 'business', 'nonprofit', 'political'] }).notNull().default('citizen'),
-  address: text('address'),
-  latitude: doublePrecision('latitude'),
-  longitude: doublePrecision('longitude'),
-  neighborhoodId: integer('neighborhood_id').references(() => neighborhoods.id),
-})
+  password_hash: text('password_hash').notNull(),
+  system_username: text('system_username').notNull().unique(),
+  display_name: text('display_name'),
+  home_neighborhood: text('home_neighborhood'),
+  neighborhood_id: integer('neighborhood_id'), // Keeps snake_case database property alignment
+  role: text('role').default('citizen').notNull(),
+});
 
 export const posts = pgTable('posts', {
-  id: serial('id').primaryKey(),
-  title: text('title').notNull(),
-  content: text('content').notNull(), // Stories, Mini-blogs, Event text
-  type: text('type', { enum: ['story', 'miniblog', 'short'] }).notNull(),
-  mediaUrl: text('media_url'), // S3, CDN, YouTube, image links
-  userType: text('user_type', { enum: ['citizen', 'business', 'nonprofit', 'political'] }).notNull(),
-  userId: integer('user_id').references(() => users.id).notNull(),
-  neighborhoodId: integer('neighborhood_id').references(() => neighborhoods.id).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  isProposal: boolean('is_proposal').default(false).notNull(),
-  likes: integer('likes').default(0).notNull(),
-  seconds: integer('seconds').default(0).notNull(),
-  dislikes: integer('dislikes').default(0).notNull(),
-  objections: integer('objections').default(0).notNull(),
-  location: geographyPoint('location'), // geographyPoint for ST_DWithin queries
-  councilDistrictId: integer('council_district_id').references(() => councilDistricts.id),
-  historicDistrictId: integer('historic_district_id').references(() => historicDistricts.id),
-  isBeacon: boolean('is_beacon').default(false).notNull(),
-  beaconExpiresAt: timestamp('beacon_expires_at'),
-  isPinned: boolean('is_pinned').default(false).notNull(),
-  pinnedDistrictId: integer('pinned_district_id').references(() => planningDistricts.id),
-  pinnedCouncilDistrictId: integer('pinned_council_district_id').references(() => councilDistricts.id),
-  anonymousAuthorName: text('anonymous_author_name'),
-  radiusMeters: integer('radius_meters').default(800).notNull(),
-  shadowbanned: boolean('shadowbanned').default(false).notNull(),
-  hitCityWall: boolean('hit_city_wall').default(false).notNull(),
-})
+  id: text('id').primaryKey(),
+  author_id: text('author_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  neighborhood_id: integer('neighborhood_id').references(() => neighborhoods.id, { onDelete: 'set null' }),
+  
+  // Expanded Content Fields
+  title: text('title'),
+  content: text('content').notNull(),
+  type: text('type').default('miniblog').notNull(), // e.g., 'miniblog', 'story', 'short'
+  media_url: text('media_url'),
+  is_proposal: boolean('is_proposal').default(false).notNull(),
+  
+  // Echo Algorithm Engine Metrics
+  walking_likes: integer('walking_likes').default(0).notNull(),
+  civic_votes: integer('civic_votes').default(0).notNull(),
+  debate_heat: integer('debate_heat').default(0).notNull(),
+  ripples: integer('ripples').default(0).notNull(),
+  toxicity_flags: integer('toxicity_flags').default(0).notNull(),
+  
+  created_at: timestamp('created_at').defaultNow().notNull(),
+});
 
 // Drizzle relations
 export const statesRelations = relations(states, ({ many }) => ({
@@ -126,16 +119,14 @@ export const neighborhoodsRelations = relations(neighborhoods, ({ one, many }) =
 }))
 
 export const usersRelations = relations(users, ({ one, many }) => ({
-  neighborhood: one(neighborhoods, { fields: [users.neighborhoodId], references: [neighborhoods.id] }),
+  neighborhood: one(neighborhoods, { fields: [users.neighborhood_id], references: [neighborhoods.id] }),
   posts: many(posts),
   reactions: many(postReactions),
 }))
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
-  user: one(users, { fields: [posts.userId], references: [users.id] }),
-  neighborhood: one(neighborhoods, { fields: [posts.neighborhoodId], references: [neighborhoods.id] }),
-  councilDistrict: one(councilDistricts, { fields: [posts.councilDistrictId], references: [councilDistricts.id] }),
-  historicDistrict: one(historicDistricts, { fields: [posts.historicDistrictId], references: [historicDistricts.id] }),
+  author: one(users, { fields: [posts.author_id], references: [users.id] }),
+  neighborhood: one(neighborhoods, { fields: [posts.neighborhood_id], references: [neighborhoods.id] }),
   reactions: many(postReactions),
 }))
 
@@ -148,25 +139,24 @@ export const historicDistrictsRelations = relations(historicDistricts, ({ many }
 }))
 
 export const postReactions = pgTable('post_reactions', {
-  id: serial('id').primaryKey(),
-  postId: integer('post_id').references(() => posts.id).notNull(),
-  userId: integer('user_id').references(() => users.id).notNull(),
-  type: text('type', { enum: ['like', 'second', 'dislike', 'object', 'love_local', 'second_this', 'not_for_me', 'bad_for_community'] }).notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  interactionWeight: doublePrecision('interaction_weight').default(1.0).notNull(),
+  id: text('id').primaryKey(),
+  post_id: text('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  user_id: text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  reaction_type: text('reaction_type').notNull(),
+  created_at: timestamp('created_at').defaultNow().notNull(),
 }, (table) => [
-  unique('post_user_unique').on(table.postId, table.userId)
+  unique('post_user_reaction_unique').on(table.post_id, table.user_id)
 ])
 
 export const postReactionsRelations = relations(postReactions, ({ one }) => ({
-  post: one(posts, { fields: [postReactions.postId], references: [posts.id] }),
-  user: one(users, { fields: [postReactions.userId], references: [users.id] }),
+  post: one(posts, { fields: [postReactions.post_id], references: [posts.id] }),
+  user: one(users, { fields: [postReactions.user_id], references: [users.id] }),
 }))
 
 export const civicVotes = pgTable('civic_votes', {
   id: serial('id').primaryKey(),
-  postId: integer('post_id').references(() => posts.id).notNull(),
-  userId: integer('user_id').references(() => users.id).notNull(),
+  postId: text('post_id').references(() => posts.id, { onDelete: 'cascade' }).notNull(),
+  userId: text('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
   vote: text('vote', { enum: ['agree', 'object'] }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   interactionWeight: doublePrecision('interaction_weight').default(1.0).notNull(),
@@ -184,3 +174,15 @@ export const betaFeedback = pgTable('beta_feedback', {
   content: text('content').notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
+
+export const commercialVerificationRequests = pgTable('commercial_verification_requests', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id'),
+  organizationName: text('organization_name').notNull(),
+  organizationType: text('organization_type', { enum: ['business', 'nonprofit', 'political'] }).notNull(),
+  contactEmail: text('contact_email').notNull(),
+  details: text('details'),
+  status: text('status', { enum: ['pending', 'approved', 'rejected'] }).notNull().default('pending'),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+})
+
