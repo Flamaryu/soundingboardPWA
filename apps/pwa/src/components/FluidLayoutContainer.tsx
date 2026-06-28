@@ -858,20 +858,20 @@ export default function FluidLayoutContainer({
           console.error("Post creation failed or payload is missing.");
           return;
         }
-        const nh = neighborhoods.find(n => n.id === (res.post.neighborhoodId || activeNhId))
+        const nh = neighborhoods.find(n => n.id === (res.post?.neighborhoodId || activeNhId))
         const enrichedPost = {
-          ...res.post,
-          userName: res.post.anonymousAuthorName ? res.post.anonymousAuthorName : (currentUser ? currentUser.name : 'Unknown User'),
-          userRole: res.post.anonymousAuthorName ? 'citizen' : (currentUser ? currentUser.role : 'citizen'),
+          ...(res.post || {}),
+          userName: res.post?.anonymousAuthorName ? res.post.anonymousAuthorName : (currentUser ? currentUser.name : 'Unknown User'),
+          userRole: res.post?.anonymousAuthorName ? 'citizen' : (currentUser ? currentUser.role : 'citizen'),
           neighborhoodName: nh ? nh.name : 'Wilmington',
           userReaction: null,
-          likes: res.post.likes || 0,
-          seconds: res.post.seconds || 0,
-          dislikes: res.post.dislikes || 0,
-          objections: res.post.objections || 0,
-          isProposal: res.post.isProposal || false,
-          isBeacon: res.post.isBeacon || false,
-          isPinned: res.post.isPinned || false
+          likes: res.post?.likes || 0,
+          seconds: res.post?.seconds || 0,
+          dislikes: res.post?.dislikes || 0,
+          objections: res.post?.objections || 0,
+          isProposal: res.post?.isProposal || false,
+          isBeacon: res.post?.isBeacon || false,
+          isPinned: res.post?.isPinned || false
         }
         setPosts(prev => {
           let updated = prev
