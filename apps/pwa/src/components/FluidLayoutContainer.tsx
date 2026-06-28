@@ -858,7 +858,7 @@ export default function FluidLayoutContainer({
           console.error("Post creation failed or payload is missing.");
           return;
         }
-        const nh = neighborhoods.find(n => n.id === (res.post?.neighborhoodId || activeNhId))
+        const nh = neighborhoods.find(n => n.id === (res.post?.neighborhood_id || res.post?.neighborhoodId || activeNhId))
         const enrichedPost = {
           ...(res.post || {}),
           userName: res.post?.anonymousAuthorName ? res.post.anonymousAuthorName : (currentUser ? currentUser.name : 'Unknown User'),
