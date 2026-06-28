@@ -858,20 +858,21 @@ export default function FluidLayoutContainer({
           console.error("Post creation failed or payload is missing.");
           return;
         }
-        const nh = neighborhoods.find(n => n.id === (res.post?.neighborhood_id || res.post?.neighborhoodId || activeNhId))
+        const safePost = res.post as any
+        const nh = neighborhoods.find(n => n.id === (safePost?.neighborhood_id || safePost?.neighborhoodId || activeNhId))
         const enrichedPost = {
-          ...(res.post || {}),
-          userName: res.post?.anonymousAuthorName ? res.post.anonymousAuthorName : (currentUser ? currentUser.name : 'Unknown User'),
-          userRole: res.post?.anonymousAuthorName ? 'citizen' : (currentUser ? currentUser.role : 'citizen'),
+          ...(safePost || {}),
+          userName: safePost?.anonymousAuthorName ? safePost.anonymousAuthorName : (currentUser ? currentUser.name : 'Unknown User'),
+          userRole: safePost?.anonymousAuthorName ? 'citizen' : (currentUser ? currentUser.role : 'citizen'),
           neighborhoodName: nh ? nh.name : 'Wilmington',
           userReaction: null,
-          likes: res.post?.likes || 0,
-          seconds: res.post?.seconds || 0,
-          dislikes: res.post?.dislikes || 0,
-          objections: res.post?.objections || 0,
-          isProposal: res.post?.isProposal || false,
-          isBeacon: res.post?.isBeacon || false,
-          isPinned: res.post?.isPinned || false
+          likes: safePost?.likes || 0,
+          seconds: safePost?.seconds || 0,
+          dislikes: safePost?.dislikes || 0,
+          objections: safePost?.objections || 0,
+          isProposal: safePost?.isProposal || false,
+          isBeacon: safePost?.isBeacon || false,
+          isPinned: safePost?.isPinned || false
         }
         setPosts(prev => {
           let updated = prev
