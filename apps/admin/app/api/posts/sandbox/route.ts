@@ -4,6 +4,7 @@ export const revalidate = 0;
 import { NextResponse } from 'next/server'
 import { db, posts as postsTable, users, getUpstashRedis, propagatePostEcho, readSharedMockDb } from '@echogram/shared-db'
 import { eq, desc } from 'drizzle-orm'
+import { clearSandboxAction } from '../../../actions'
 
 function getInteractionWeight(distance: number): number {
   if (distance < 500) return 1.0;
@@ -276,40 +277,12 @@ export async function DELETE(request: Request) {
     }
 
     if (!idParam) {
-      // Clear entire sandbox feed
-      const rawPosts = await redis.lrange('sandbox:posts', 0, -1)
-      for (const raw of rawPosts) {
-        try {
-          const p = typeof raw === 'string' ? JSON.parse(raw) : raw
-          if (p && p.id) {
-            await redis.del(`post:${p.id}`)
-          }
-        } catch (e) {}
+      const res = await clearSandboxAction()
+      if (res.success) {
+        return NextResponse.json({ success: true, message: res.message }, { status: 200 })
+      } else {
+        return NextResponse.json({ success: false, error: res.error }, { status: 500 })
       }
-      await redis.del('sandbox:posts')
-      await redis.del('geo:posts')
-      
-      const mockDb = readSharedMockDb()
-      if (mockDb) {
-        if (mockDb.neighborhoods) {
-          for (const nh of mockDb.neighborhoods) {
-            await redis.del(`feed:neighborhood:${nh.id}`)
-            if (nh.districtId) await redis.del(`feed:district:${nh.districtId}`)
-          }
-        }
-        if (mockDb.councilDistricts) {
-          for (const cd of mockDb.councilDistricts) {
-            await redis.del(`feed:council:${cd.id}`)
-          }
-        }
-        if (mockDb.historicDistricts) {
-          for (const hd of mockDb.historicDistricts) {
-            await redis.del(`feed:historic:${hd.id}`)
-          }
-        }
-      }
-      await redis.del('feed:city')
-      return NextResponse.json({ success: true, message: "Sandbox feed successfully cleared" }, { status: 200 })
     }
 
     const rawPosts = await redis.lrange('sandbox:posts', 0, -1)

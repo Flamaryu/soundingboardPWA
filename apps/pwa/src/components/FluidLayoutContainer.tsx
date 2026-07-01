@@ -385,6 +385,15 @@ export default function FluidLayoutContainer({
 
   // Form State
   const [showCreateForm, setShowCreateForm] = useState(false)
+  const [isCreateFormClosing, setIsCreateFormClosing] = useState(false)
+
+  const closeCreateFormWithAnimation = () => {
+    setIsCreateFormClosing(true)
+    setTimeout(() => {
+      setShowCreateForm(false)
+      setIsCreateFormClosing(false)
+    }, 300)
+  }
   const [exactPublishCoordinates, setExactPublishCoordinates] = useState<{ lat: number; lng: number } | null>(null)
   const [postType, setPostType] = useState<'story' | 'miniblog' | 'short'>('miniblog')
   const [title, setTitle] = useState('')
@@ -1621,7 +1630,7 @@ export default function FluidLayoutContainer({
 
               {flags.enableCreatePost && (
                 <button
-                  onClick={() => setShowCreateForm(!showCreateForm)}
+                  onClick={() => showCreateForm ? closeCreateFormWithAnimation() : setShowCreateForm(true)}
                   className={`bg-[#d90429] hover:bg-[#b00320] text-white rounded-xl px-4 py-2 text-xs font-bold flex items-center gap-1 transition-all active:scale-95 shadow-md shadow-[#d90429]/15 ${!flags.enableSearch ? 'w-full justify-center' : ''}`}
                 >
                   <Plus className="w-3.5 h-3.5" /> Create
@@ -2123,13 +2132,17 @@ export default function FluidLayoutContainer({
       {showCreateForm && (
         <>
           <div 
-            className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-xs transition-opacity duration-300"
-            onClick={() => setShowCreateForm(false)} 
+            data-state={isCreateFormClosing ? 'closed' : 'open'}
+            className="fixed inset-0 z-[9998] bg-black/60 backdrop-blur-xs transition-opacity duration-300 data-[state=open]:opacity-100 data-[state=closed]:opacity-0 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0"
+            onClick={closeCreateFormWithAnimation} 
           />
-          <div className="fixed inset-x-0 bottom-0 z-[9999] w-full max-w-2xl mx-auto bg-[#0b132b] border-t border-slate-800 rounded-t-2xl shadow-2xl p-6 pb-8 transition-transform duration-300 transform translate-y-0">
+          <div 
+            data-state={isCreateFormClosing ? 'closed' : 'open'}
+            className="fixed inset-x-0 bottom-0 z-[9999] w-full max-w-2xl mx-auto bg-[#0b132b] border-t border-slate-800 rounded-t-2xl shadow-2xl p-6 pb-8 transition-all duration-300 transform data-[state=open]:translate-y-0 data-[state=open]:opacity-100 data-[state=closed]:translate-y-full data-[state=closed]:opacity-0 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:slide-in-from-bottom-full data-[state=closed]:slide-out-to-bottom-full"
+          >
             <CreatePostForm
               isOpen={showCreateForm}
-              onClose={() => setShowCreateForm(false)}
+              onClose={closeCreateFormWithAnimation}
               onSuccess={() => fetchPosts()}
               currentUser={currentUser}
               authMember={authMember}

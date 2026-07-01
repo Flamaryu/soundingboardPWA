@@ -45,7 +45,8 @@ export default function CreatePostForm({
   mapCenter,
   getBoundaryCentroid
 }: CreatePostFormProps) {
-  const [postState, setPostState] = useState<'idle' | 'submitting' | 'success'>('idle')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isSuccess, setIsSuccess] = useState(false)
   const [title, setTitle] = useState('')
   const [content, setContent] = useState('')
   const [mediaUrl, setMediaUrl] = useState('')
@@ -72,7 +73,8 @@ export default function CreatePostForm({
       return
     }
 
-    setPostState('submitting')
+    setIsSubmitting(true)
+    setIsSuccess(false)
 
     try {
       let lat = exactPublishCoordinates?.lat ?? userLocation?.lat ?? mapCenter.lat
@@ -122,32 +124,33 @@ export default function CreatePostForm({
 
       const res = await response.json().catch(() => ({}))
       if (response.ok && res.success !== false) {
-        setPostState('success')
+        setIsSuccess(true)
         setTimeout(() => {
+          onClose()
           setTitle('')
           setContent('')
           setMediaUrl('')
           setBlastToCouncil(false)
           setIsAnonymous(false)
           onSuccess()
-          onClose()
-          setPostState('idle')
-        }, 1200)
+          setIsSubmitting(false)
+          setIsSuccess(false)
+        }, 800)
       } else {
         const errMessage = res.error || res.message || 'Server error occurred while publishing.'
         setFormError(errMessage)
-        setPostState('idle')
+        setIsSubmitting(false)
       }
     } catch (err: any) {
       setFormError('Network error while publishing. Please try again.')
-      setPostState('idle')
+      setIsSubmitting(false)
     }
   }
 
   return (
     <div className="relative w-full">
       {/* Centered Symmetrical Full-Screen Ripple Portal upon Success */}
-      {postState === 'success' && (
+      {isSuccess && (
         <div className="fixed inset-0 pointer-events-none z-[10000] flex items-center justify-center bg-slate-950/20 backdrop-blur-xs transition-opacity duration-500">
           <div className="relative flex items-center justify-center w-0 h-0">
             <div className="absolute rounded-full border-2 border-emerald-400 bg-emerald-500/10 animate-[ping_1s_cubic-bezier(0,0,0.2,1)_infinite]" style={{ width: '40vw', height: '40vw', animationIterationCount: 1 }} />
@@ -159,10 +162,19 @@ export default function CreatePostForm({
       )}
 
       {/* Glassmorphic Loading Barrier */}
-      {postState === 'submitting' && (
+      {(isSubmitting || isSuccess) && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-md rounded-2xl">
-          <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-3" />
-          <p className="text-sm font-medium text-slate-300 animate-pulse">Anchoring echo to local grid...</p>
+          {isSuccess ? (
+            <div className="flex flex-col items-center justify-center">
+              <CheckCircle2 className="w-12 h-12 text-emerald-400 mb-3 animate-[bounce_1s_infinite]" />
+              <p className="text-sm font-bold text-emerald-400">Broadcast Live!</p>
+            </div>
+          ) : (
+            <>
+              <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-3" />
+              <p className="text-sm font-medium text-slate-300 animate-pulse">Anchoring echo to local grid...</p>
+            </>
+          )}
         </div>
       )}
 
@@ -330,11 +342,11 @@ export default function CreatePostForm({
             </button>
             <button
               type="submit"
-              disabled={postState !== 'idle'}
+              disabled={isSubmitting || isSuccess}
               className="px-5 py-2 rounded-xl bg-[#d90429] text-white text-xs font-bold flex items-center gap-1.5 hover:bg-[#d90429]/90 transition-colors shadow-lg shadow-[#d90429]/20 disabled:opacity-50 cursor-pointer"
             >
               <Send className="w-3.5 h-3.5" />
-              <span>{postState === 'submitting' ? 'Publishing...' : 'Broadcast'}</span>
+              <span>{isSubmitting ? 'Publishing...' : 'Broadcast'}</span>
             </button>
           </div>
         </div>
