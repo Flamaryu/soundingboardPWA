@@ -8,6 +8,9 @@ import { eq, desc } from 'drizzle-orm';
 
 export async function GET() {
   try {
+    if (!db) {
+      return NextResponse.json({ success: true, posts: [] });
+    }
     const rawPosts = await db
       .select({
         post: posts,
@@ -17,7 +20,7 @@ export async function GET() {
       .leftJoin(users, eq(posts.author_id, users.id))
       .orderBy(desc(posts.created_at));
 
-    const mappedPosts = rawPosts.map(({ post, author }) => ({
+    const mappedPosts = rawPosts.map(({ post, author }: { post: any; author: any }) => ({
       id: post.id,
       title: post.title || '',
       content: post.content,

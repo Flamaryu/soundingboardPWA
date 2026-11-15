@@ -84,9 +84,17 @@ export const posts = pgTable('posts', {
   // Expanded Content Fields
   title: text('title'),
   content: text('content').notNull(),
-  type: text('type').default('miniblog').notNull(), // e.g., 'miniblog', 'story', 'short'
+  type: text('type').default('echo').notNull(), // 'echo' | 'proposal' | 'alert' | 'beacon' (also supports legacy 'miniblog' | 'story' | 'short')
   media_url: text('media_url'),
   is_proposal: boolean('is_proposal').default(false).notNull(),
+  is_anonymous: boolean('is_anonymous').default(false).notNull(),
+  is_beacon: boolean('is_beacon').default(false).notNull(),
+  beacon_expires_at: timestamp('beacon_expires_at'),
+  proposal_status: text('proposal_status').default('proposed').notNull(), // 'proposed' | 'under_review' | 'adopted' | 'resolved'
+  quorum_target: integer('quorum_target').default(25).notNull(),
+  latitude: doublePrecision('latitude'),
+  longitude: doublePrecision('longitude'),
+  radius_meters: integer('radius_meters').default(300).notNull(),
   
   // Echo Algorithm Engine Metrics
   walking_likes: integer('walking_likes').default(0).notNull(),
@@ -123,12 +131,14 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   neighborhood: one(neighborhoods, { fields: [users.neighborhood_id], references: [neighborhoods.id] }),
   posts: many(posts),
   reactions: many(postReactions),
+  replies: many(postReplies),
 }))
 
 export const postsRelations = relations(posts, ({ one, many }) => ({
   author: one(users, { fields: [posts.author_id], references: [users.id] }),
   neighborhood: one(neighborhoods, { fields: [posts.neighborhood_id], references: [neighborhoods.id] }),
   reactions: many(postReactions),
+  replies: many(postReplies),
 }))
 
 export const councilDistrictsRelations = relations(councilDistricts, ({ many }) => ({
@@ -156,6 +166,22 @@ export const postReactionsRelations = relations(postReactions, ({ one }) => ({
   user: one(users, { fields: [postReactions.user_id], references: [users.id] }),
 }))
 
+export const postReplies = pgTable('post_replies', {
+  id: text('id').primaryKey(),
+  post_id: text('post_id').notNull().references(() => posts.id, { onDelete: 'cascade' }),
+  author_id: text('author_id').references(() => users.id, { onDelete: 'set null' }),
+  guest_name: text('guest_name'),
+  is_anonymous: boolean('is_anonymous').default(false).notNull(),
+  content: text('content').notNull(),
+  distance_meters: integer('distance_meters'),
+  created_at: timestamp('created_at').defaultNow().notNull(),
+})
+
+export const postRepliesRelations = relations(postReplies, ({ one }) => ({
+  post: one(posts, { fields: [postReplies.post_id], references: [posts.id] }),
+  author: one(users, { fields: [postReplies.author_id], references: [users.id] }),
+}))
+
 export const civicVotes = pgTable('civic_votes', {
   id: serial('id').primaryKey(),
   postId: text('post_id').references(() => posts.id, { onDelete: 'cascade' }).notNull(),
@@ -171,6 +197,29 @@ export const civicVotesRelations = relations(civicVotes, ({ one }) => ({
   post: one(posts, { fields: [civicVotes.postId], references: [posts.id] }),
   user: one(users, { fields: [civicVotes.userId], references: [users.id] }),
 }))
+
+export const businessProfiles = pgTable('business_profiles', {
+  id: serial('id').primaryKey(),
+  user_id: text('user_id').references(() => users.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  category: text('category').default('Local Business').notNull(),
+  latitude: doublePrecision('latitude').notNull(),
+  longitude: doublePrecision('longitude').notNull(),
+  neighborhood_id: integer('neighborhood_id').references(() => neighborhoods.id, { onDelete: 'set null' }),
+  beacon_schedule: text('beacon_schedule'),
+  verified: boolean('verified').default(true).notNull(),
+  created_at: timestamp('created_at').defaultNow().notNull(),
+})
+
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id: serial('id').primaryKey(),
+  user_id: text('user_id'),
+  endpoint: text('endpoint').notNull().unique(),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  neighborhood_id: integer('neighborhood_id'),
+  created_at: timestamp('created_at').defaultNow().notNull(),
+})
 
 export const betaFeedback = pgTable('beta_feedback', {
   id: serial('id').primaryKey(),
@@ -188,4 +237,5 @@ export const commercialVerificationRequests = pgTable('commercial_verification_r
   status: text('status', { enum: ['pending', 'approved', 'rejected'] }).notNull().default('pending'),
   createdAt: timestamp('created_at').defaultNow().notNull(),
 })
+
 
