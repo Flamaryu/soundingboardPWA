@@ -310,10 +310,16 @@ export async function listPosts(params: {
       return p.radiusMeters >= spatial.borderDistance || p.radiusMeters >= 1200
     })
   } else if (scope === 'city') {
-    mapped = mapped.filter((p) => {
-      const spatial = getPostOriginNeighborhood(p.latitude, p.longitude, p.neighborhoodName)
-      return p.radiusMeters >= spatial.districtBorderDistance || p.radiusMeters >= 3000
-    })
+    if (mockDb.wilmingtonBoundary) {
+      mapped = mapped.filter((p) =>
+        isPointInBoundary(p.longitude, p.latitude, mockDb.wilmingtonBoundary)
+      )
+    } else {
+      mapped = mapped.filter((p) => {
+        const spatial = getPostOriginNeighborhood(p.latitude, p.longitude, p.neighborhoodName)
+        return p.radiusMeters >= spatial.districtBorderDistance || p.radiusMeters >= 3000
+      })
+    }
   } else if (scope === 'council' && params.councilDistrictId) {
     const cd = mockDb.councilDistricts?.find((d: any) => d.id === params.councilDistrictId)
     if (cd?.boundary) {

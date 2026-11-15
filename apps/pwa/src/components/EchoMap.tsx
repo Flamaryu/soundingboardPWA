@@ -99,9 +99,9 @@ export default function EchoMap({
       map.removeLayer(tileLayerRef.current)
     }
     const url = isDark
-      ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-      : 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-    tileLayerRef.current = L.tileLayer(url, { maxZoom: 20, subdomains: 'abcd' }).addTo(map)
+      ? 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}'
+      : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+    tileLayerRef.current = L.tileLayer(url, { maxZoom: 19 }).addTo(map)
   }, [isDark])
 
   // Camera updates

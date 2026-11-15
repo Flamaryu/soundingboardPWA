@@ -33,96 +33,22 @@ export interface ResolvedNeighborhood {
   districtName: string
 }
 
-// Get all neighborhoods for map rendering
+// Get all neighborhoods for map rendering (always uses synced official FirstMap/NCCDE GIS boundaries)
 export async function getNeighborhoods() {
-  if (isMockDb() || !db) {
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.neighborhoods : []
-  }
-  try {
-    const rows = await db
-      .select({
-        id: schema.neighborhoods.id,
-        name: schema.neighborhoods.name,
-        districtId: schema.neighborhoods.districtId,
-        boundary: sql<string>`ST_AsGeoJSON(${schema.neighborhoods.boundary})`,
-        districtName: schema.planningDistricts.name,
-      })
-      .from(schema.neighborhoods)
-      .leftJoin(
-        schema.planningDistricts,
-        eq(schema.neighborhoods.districtId, schema.planningDistricts.id)
-      )
-
-    return rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      districtId: row.districtId,
-      districtName: row.districtName || 'Unknown',
-      boundary: row.boundary ? JSON.parse(row.boundary) : null
-    }))
-  } catch (err) {
-    console.warn('Failed to fetch neighborhoods from DB, falling back to mock:', err)
-    markDbAsFailed()
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.neighborhoods : []
-  }
+  const mockDb = readMockDb()
+  return mockDb?.neighborhoods || []
 }
 
-// Get council districts
+// Get council districts (City Council 1-8 + NCC County Council)
 export async function getCouncilDistricts() {
-  if (isMockDb() || !db) {
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.councilDistricts : []
-  }
-  try {
-    const rows = await db
-      .select({
-        id: schema.councilDistricts.id,
-        name: schema.councilDistricts.name,
-        boundary: sql<string>`ST_AsGeoJSON(${schema.councilDistricts.boundary})`,
-      })
-      .from(schema.councilDistricts)
-
-    return rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      boundary: row.boundary ? JSON.parse(row.boundary) : null
-    }))
-  } catch (err) {
-    console.warn('Failed to fetch council districts from DB, falling back to mock:', err)
-    markDbAsFailed()
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.councilDistricts : []
-  }
+  const mockDb = readMockDb()
+  return mockDb?.councilDistricts || []
 }
 
 // Get historic districts
 export async function getHistoricDistricts() {
-  if (isMockDb() || !db) {
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.historicDistricts : []
-  }
-  try {
-    const rows = await db
-      .select({
-        id: schema.historicDistricts.id,
-        name: schema.historicDistricts.name,
-        boundary: sql<string>`ST_AsGeoJSON(${schema.historicDistricts.boundary})`,
-      })
-      .from(schema.historicDistricts)
-
-    return rows.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      boundary: row.boundary ? JSON.parse(row.boundary) : null
-    }))
-  } catch (err) {
-    console.warn('Failed to fetch historic districts from DB, falling back to mock:', err)
-    markDbAsFailed()
-    const mockDb = readMockDb()
-    return mockDb ? mockDb.historicDistricts : []
-  }
+  const mockDb = readMockDb()
+  return mockDb?.historicDistricts || []
 }
 
 // Get election precincts

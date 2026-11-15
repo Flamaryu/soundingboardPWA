@@ -34,16 +34,44 @@ function roundCoord(val) {
   return Math.round(val * 100000) / 100000
 }
 
-function simplifyRing(ring, maxPoints = 80) {
+function perpDist(pt, a, b) {
+  const dx = b[0] - a[0]
+  const dy = b[1] - a[1]
+  if (dx === 0 && dy === 0) return Math.hypot(pt[0] - a[0], pt[1] - a[1])
+  const t = ((pt[0] - a[0]) * dx + (pt[1] - a[1]) * dy) / (dx * dx + dy * dy)
+  const projX = a[0] + t * dx
+  const projY = a[1] + t * dy
+  return Math.hypot(pt[0] - projX, pt[1] - projY)
+}
+
+function rdp(pts, eps) {
+  if (pts.length <= 2) return pts
+  let maxD = 0
+  let idx = 0
+  for (let i = 1; i < pts.length - 1; i++) {
+    const d = perpDist(pts[i], pts[0], pts[pts.length - 1])
+    if (d > maxD) {
+      maxD = d
+      idx = i
+    }
+  }
+  if (maxD > eps) {
+    const left = rdp(pts.slice(0, idx + 1), eps)
+    const right = rdp(pts.slice(idx), eps)
+    return left.slice(0, -1).concat(right)
+  }
+  return [pts[0], pts[pts.length - 1]]
+}
+
+function simplifyRing(ring, maxPoints = 120) {
   const rounded = ring.map(([lng, lat]) => [roundCoord(lng), roundCoord(lat)])
   if (rounded.length <= maxPoints) return rounded
-  const step = Math.ceil(rounded.length / maxPoints)
-  const out = []
-  for (let i = 0; i < rounded.length - 1; i += step) {
-    out.push(rounded[i])
+  let eps = 0.00008
+  let out = rdp(rounded, eps)
+  while (out.length > maxPoints && eps < 0.002) {
+    eps *= 1.5
+    out = rdp(rounded, eps)
   }
-  out.push(rounded[rounded.length - 1])
-  // Ensure closed ring
   if (
     out.length >= 3 &&
     (out[0][0] !== out[out.length - 1][0] || out[0][1] !== out[out.length - 1][1])
