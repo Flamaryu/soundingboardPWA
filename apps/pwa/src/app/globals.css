@@ -1,0 +1,113 @@
+@import "tailwindcss";
+
+@custom-variant dark (.dark &);
+
+:root {
+  --background: #FDFBF7; /* Warm Alabaster */
+  --surface: #FFFFFF;
+  --surface-subtle: #F3EFE6;
+  --foreground: #2B2D42; /* Slate Charcoal */
+  --muted: #5C647A;
+  --border: rgba(43, 45, 66, 0.12);
+  --accent: #D90429; /* Row-House Brick Red */
+  --accent-hover: #B80322;
+  --accent-muted: rgba(217, 4, 41, 0.12);
+  --civic-green: #059669;
+  --beacon-amber: #D97706;
+  --echo-sky: #0284C7;
+  --shadow-color: rgba(43, 45, 66, 0.08);
+}
+
+.dark {
+  --background: #0B132B; /* Deep Ink Slate */
+  --surface: #151E38;
+  --surface-subtle: #1C2541;
+  --foreground: #F1F5F9;
+  --muted: #94A3B8;
+  --border: rgba(241, 245, 249, 0.10);
+  --accent: #D90429; /* Row-House Brick Red */
+  --accent-hover: #EF233C;
+  --accent-muted: rgba(217, 4, 41, 0.18);
+  --civic-green: #10B981;
+  --beacon-amber: #F59E0B;
+  --echo-sky: #38BDF8;
+  --shadow-color: rgba(0, 0, 0, 0.35);
+}
+
+@theme {
+  --color-bg-main: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-text-main: var(--foreground);
+  --color-text-muted: var(--muted);
+  --color-border-subtle: var(--border);
+  --color-accent-main: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-outfit), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-x: hidden;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-display);
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes rippleExpand {
+  0% {
+    transform: scale(0.75);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.85);
+    opacity: 0;
+  }
+}
+
+.animate-ripple {
+  animation: rippleExpand 2.6s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+/* Clean Leaflet tooltip override */
+.leaflet-tooltip.echogram-tooltip {
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 10px;
+  box-shadow: 0 8px 24px var(--shadow-color);
+  font-family: var(--font-sans);
+}
+.leaflet-tooltip.echogram-tooltip::before {
+  display: none;
+}

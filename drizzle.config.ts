@@ -1,11 +1,44 @@
 import { defineConfig } from 'drizzle-kit';
+import * as fs from 'fs';
+import * as path from 'path';
+
+function loadEnv() {
+  const envFiles = [
+    'apps/pwa/.env.development.local',
+    'apps/pwa/.env.local',
+    'apps/pwa/.env',
+    '.env.local',
+    '.env'
+  ];
+  for (const file of envFiles) {
+    const filePath = path.resolve(__dirname, file);
+    if (fs.existsSync(filePath)) {
+      const content = fs.readFileSync(filePath, 'utf8');
+      for (const line of content.split('\n')) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#')) {
+          const eqIdx = trimmed.indexOf('=');
+          if (eqIdx > 0) {
+            const key = trimmed.slice(0, eqIdx).trim();
+            let val = trimmed.slice(eqIdx + 1).trim();
+            if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+              val = val.slice(1, -1);
+            }
+            if (!process.env[key]) process.env[key] = val;
+          }
+        }
+      }
+    }
+  }
+}
+
+loadEnv();
 
 export default defineConfig({
   dialect: 'postgresql',
-  schema: './src/db/schema.ts',
-  out: './drizzle',
+  schema: './packages/shared-db/schema.ts',
+  out: './apps/pwa/drizzle',
   dbCredentials: {
-    url: process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_Or26QItMyqCw@ep-wandering-salad-aqbj2m4g-pooler.c-8.us-east-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require',
+    url: process.env.DATABASE_URL || process.env.POSTGRES_URL || '',
   },
-  tablesFilter: ["states", "cities", "planning_districts", "neighborhoods", "users", "posts", "post_reactions", "beta_feedback"]
 });
