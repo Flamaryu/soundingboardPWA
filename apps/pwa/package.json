@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "sync:gis": "node scripts/sync-wilmington-gis.mjs"
   },
   "dependencies": {
     "@echogram/shared-db": "*",

@@ -61,6 +61,8 @@ export async function POST(request: Request) {
       content,
       kind: (body.kind || body.type || 'echo') as PostKind,
       mediaUrl: body.mediaUrl,
+      mediaType: body.mediaType,
+      mediaThumbnailUrl: body.mediaThumbnailUrl,
       neighborhoodId: Number(body.neighborhoodId || 29),
       latitude: Number(body.latitude || 39.742),
       longitude: Number(body.longitude || -75.548),

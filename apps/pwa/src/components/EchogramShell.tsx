@@ -34,6 +34,8 @@ interface EchogramShellProps {
   neighborhoods: any[]
   councilDistricts: any[]
   historicDistricts: any[]
+  electionPrecincts: any[]
+  wilmingtonBoundary: any
   initialNhId: number
 }
 
@@ -60,6 +62,8 @@ export default function EchogramShell({
   neighborhoods,
   councilDistricts,
   historicDistricts,
+  electionPrecincts,
+  wilmingtonBoundary,
   initialNhId,
 }: EchogramShellProps) {
   const router = useRouter()
@@ -73,6 +77,7 @@ export default function EchogramShell({
   const [activeNeighborhoodId, setActiveNeighborhoodId] = useState(initialNhId)
   const [activeCouncilDistrictId, setActiveCouncilDistrictId] = useState(councilDistricts[0]?.id || 1)
   const [activeHistoricDistrictId, setActiveHistoricDistrictId] = useState(historicDistricts[0]?.id || 1)
+  const [activePrecinctId, setActivePrecinctId] = useState(electionPrecincts[0]?.id || 1)
   const [scope, setScope] = useState<ScopeMode>('neighborhood')
   const [kindFilter, setKindFilter] = useState<PostKind | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
@@ -294,14 +299,31 @@ export default function EchogramShell({
     }
   }
 
+  const activeNeighborhoodObj = neighborhoods.find((n) => n.id === activeNeighborhoodId)
+  const activeCouncilObj = councilDistricts.find((c) => c.id === activeCouncilDistrictId)
+
   const activeLocationName = (() => {
     if (activeMapLayer === 'council') {
-      return councilDistricts.find((c) => c.id === activeCouncilDistrictId)?.name || 'Council District'
+      return activeCouncilObj?.name || 'Council District'
     }
     if (activeMapLayer === 'historic') {
       return historicDistricts.find((h) => h.id === activeHistoricDistrictId)?.name || 'Historic District'
     }
-    return neighborhoods.find((n) => n.id === activeNeighborhoodId)?.name || 'Wilmington'
+    if (activeMapLayer === 'precinct') {
+      return electionPrecincts.find((p) => p.id === activePrecinctId)?.name || 'Election Precinct'
+    }
+    return activeNeighborhoodObj?.name || 'Wilmington'
+  })()
+
+  const activeJurisdictionLabel = (() => {
+    if (activeMapLayer === 'council') {
+      return activeCouncilObj?.jurisdiction === 'unincorporated' ? 'County Council' : 'City Council'
+    }
+    if (activeMapLayer === 'historic') return 'Historic District'
+    if (activeMapLayer === 'precinct') return 'Election Precinct'
+    return activeNeighborhoodObj?.jurisdiction === 'unincorporated'
+      ? `County · ${activeNeighborhoodObj?.municipality || 'Unincorporated'}`
+      : 'Wilmington City'
   })()
 
   const scopeTabs: { id: ScopeMode; label: string }[] =
@@ -331,17 +353,20 @@ export default function EchogramShell({
     <div className="min-h-screen flex flex-col bg-bg-main text-text-main">
       <TopBar
         activeLocationName={activeLocationName}
+        activeJurisdictionLabel={activeJurisdictionLabel}
         activeMapLayer={activeMapLayer}
         onChangeMapLayer={(layer) => {
           setActiveMapLayer(layer)
-          setScope(layer === 'neighborhood' ? 'neighborhood' : layer)
+          setScope(layer === 'neighborhood' || layer === 'precinct' ? 'neighborhood' : layer)
         }}
         neighborhoods={neighborhoods}
         councilDistricts={councilDistricts}
         historicDistricts={historicDistricts}
+        electionPrecincts={electionPrecincts}
         activeNeighborhoodId={activeNeighborhoodId}
         activeCouncilDistrictId={activeCouncilDistrictId}
         activeHistoricDistrictId={activeHistoricDistrictId}
+        activePrecinctId={activePrecinctId}
         onSelectNeighborhood={(id) => {
           setActiveNeighborhoodId(id)
           setScope('neighborhood')
@@ -362,6 +387,12 @@ export default function EchogramShell({
           const hd = historicDistricts.find((d) => d.id === id)
           const c = getBoundaryCentroid(hd?.boundary)
           if (c) moveCamera(c, 14.5)
+        }}
+        onSelectPrecinct={(id) => {
+          setActivePrecinctId(id)
+          const pr = electionPrecincts.find((p) => p.id === id)
+          const c = getBoundaryCentroid(pr?.boundary)
+          if (c) moveCamera(c, 14)
         }}
         onAddressSearch={handleAddressSearch}
         isDark={isDark}
@@ -386,11 +417,14 @@ export default function EchogramShell({
                 neighborhoods={neighborhoods}
                 councilDistricts={councilDistricts}
                 historicDistricts={historicDistricts}
+                electionPrecincts={electionPrecincts}
+                wilmingtonBoundary={wilmingtonBoundary}
                 posts={posts}
                 storefronts={storefronts}
                 activeNeighborhoodId={activeNeighborhoodId}
                 activeCouncilDistrictId={activeCouncilDistrictId}
                 activeHistoricDistrictId={activeHistoricDistrictId}
+                activePrecinctId={activePrecinctId}
                 activeMapLayer={activeMapLayer}
                 scope={scope}
                 userLocation={userLocation}
@@ -410,6 +444,9 @@ export default function EchogramShell({
                 onSelectHistoricDistrict={(id) => {
                   setActiveHistoricDistrictId(id)
                   setScope('historic')
+                }}
+                onSelectPrecinct={(id) => {
+                  setActivePrecinctId(id)
                 }}
                 onSelectPost={(postId) => setHighlightedPostId(postId)}
               />

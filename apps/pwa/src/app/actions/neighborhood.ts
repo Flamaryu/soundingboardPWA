@@ -125,6 +125,18 @@ export async function getHistoricDistricts() {
   }
 }
 
+// Get election precincts
+export async function getElectionPrecincts() {
+  const mockDb = readMockDb()
+  return mockDb?.electionPrecincts || []
+}
+
+// Get Wilmington municipal boundary
+export async function getWilmingtonBoundary() {
+  const mockDb = readMockDb()
+  return mockDb?.wilmingtonBoundary || null
+}
+
 // Get planning districts
 export async function getPlanningDistricts() {
   if (isMockDb()) {

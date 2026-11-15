@@ -9,11 +9,14 @@ interface EchoMapProps {
   neighborhoods: any[]
   councilDistricts: any[]
   historicDistricts: any[]
+  electionPrecincts: any[]
+  wilmingtonBoundary: any
   posts: EchoPost[]
   storefronts: VerifiedStorefront[]
   activeNeighborhoodId: number
   activeCouncilDistrictId: number
   activeHistoricDistrictId: number
+  activePrecinctId: number
   activeMapLayer: MapLayerMode
   scope: ScopeMode
   userLocation: { lat: number; lng: number } | null
@@ -25,6 +28,7 @@ interface EchoMapProps {
   onSelectNeighborhood: (id: number) => void
   onSelectCouncilDistrict: (id: number) => void
   onSelectHistoricDistrict: (id: number) => void
+  onSelectPrecinct: (id: number) => void
   onSelectPost?: (postId: string) => void
 }
 
@@ -32,11 +36,14 @@ export default function EchoMap({
   neighborhoods,
   councilDistricts,
   historicDistricts,
+  electionPrecincts,
+  wilmingtonBoundary,
   posts,
   storefronts,
   activeNeighborhoodId,
   activeCouncilDistrictId,
   activeHistoricDistrictId,
+  activePrecinctId,
   activeMapLayer,
   scope,
   userLocation,
@@ -48,11 +55,13 @@ export default function EchoMap({
   onSelectNeighborhood,
   onSelectCouncilDistrict,
   onSelectHistoricDistrict,
+  onSelectPrecinct,
   onSelectPost,
 }: EchoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
   const tileLayerRef = useRef<L.TileLayer | null>(null)
+  const cityOutlineRef = useRef<L.GeoJSON | null>(null)
   const geoLayerRef = useRef<L.GeoJSON | null>(null)
   const echoLayerRef = useRef<L.LayerGroup | null>(null)
   const storefrontLayerRef = useRef<L.LayerGroup | null>(null)
@@ -102,6 +111,28 @@ export default function EchoMap({
     map.flyTo([center.lat, center.lng], zoom, { animate: true, duration: 0.6 })
   }, [cameraTrigger])
 
+  // Render Wilmington City Limits dashed outline
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+    if (cityOutlineRef.current) map.removeLayer(cityOutlineRef.current)
+    if (!wilmingtonBoundary) return
+
+    cityOutlineRef.current = L.geoJSON(
+      { type: 'Feature', properties: { name: 'Wilmington City Limits' }, geometry: wilmingtonBoundary } as any,
+      {
+        interactive: false,
+        style: {
+          color: '#D90429',
+          weight: 2,
+          dashArray: '6 4',
+          fillOpacity: 0,
+          opacity: 0.75,
+        },
+      }
+    ).addTo(map)
+  }, [wilmingtonBoundary])
+
   // Render GeoJSON Boundaries
   useEffect(() => {
     const map = mapRef.current
@@ -113,6 +144,8 @@ export default function EchoMap({
         ? councilDistricts
         : activeMapLayer === 'historic'
         ? historicDistricts
+        : activeMapLayer === 'precinct'
+        ? electionPrecincts
         : neighborhoods
 
     const geoData: any = {
@@ -121,7 +154,14 @@ export default function EchoMap({
         .filter((item) => item.boundary)
         .map((item) => ({
           type: 'Feature',
-          properties: { id: item.id, name: item.name, districtId: item.districtId },
+          properties: {
+            id: item.id,
+            name: item.name,
+            districtId: item.districtId,
+            jurisdiction: item.jurisdiction,
+            municipality: item.municipality,
+            councilMember: item.councilMember,
+          },
           geometry: item.boundary,
         })),
     }
@@ -131,6 +171,7 @@ export default function EchoMap({
       2: '#059669',
       3: '#D97706',
       4: '#D90429',
+      5: '#6366F1', // Unincorporated NCC
     }
 
     const layer = L.geoJSON(geoData, {
@@ -141,20 +182,26 @@ export default function EchoMap({
             ? id === activeNeighborhoodId
             : activeMapLayer === 'council'
             ? id === activeCouncilDistrictId
-            : id === activeHistoricDistrictId
+            : activeMapLayer === 'historic'
+            ? id === activeHistoricDistrictId
+            : id === activePrecinctId
 
         const stroke =
           activeMapLayer === 'neighborhood'
             ? districtColors[feature.properties.districtId] || '#64748B'
             : activeMapLayer === 'historic'
             ? '#D97706'
+            : activeMapLayer === 'precinct'
+            ? '#8B5CF6'
+            : feature.properties.jurisdiction === 'unincorporated'
+            ? '#6366F1'
             : '#0284C7'
 
         return {
           color: isActive ? '#D90429' : stroke,
           weight: isActive ? 2.5 : 1,
           fillColor: stroke,
-          fillOpacity: scope === 'city' ? 0.09 : isActive ? 0.22 : 0.04,
+          fillOpacity: scope === 'city' ? 0.08 : isActive ? 0.24 : 0.04,
         }
       },
       onEachFeature: (feature: any, poly: any) => {
@@ -162,11 +209,20 @@ export default function EchoMap({
           click: () => {
             if (activeMapLayer === 'neighborhood') onSelectNeighborhood(feature.properties.id)
             else if (activeMapLayer === 'council') onSelectCouncilDistrict(feature.properties.id)
-            else onSelectHistoricDistrict(feature.properties.id)
+            else if (activeMapLayer === 'historic') onSelectHistoricDistrict(feature.properties.id)
+            else onSelectPrecinct(feature.properties.id)
           },
         })
+        const sub =
+          feature.properties.councilMember
+            ? `Rep: ${feature.properties.councilMember}`
+            : feature.properties.jurisdiction === 'unincorporated'
+            ? `County · ${feature.properties.municipality || 'Unincorporated NCC'}`
+            : feature.properties.jurisdiction === 'city'
+            ? 'Wilmington City'
+            : ''
         poly.bindTooltip(
-          `<div class="text-xs font-bold">${feature.properties.name}</div>`,
+          `<div class="text-xs font-bold">${feature.properties.name}</div>${sub ? `<div class="text-[11px] opacity-75">${sub}</div>` : ''}`,
           { className: 'echogram-tooltip', direction: 'top' }
         )
       },
@@ -177,10 +233,12 @@ export default function EchoMap({
     neighborhoods,
     councilDistricts,
     historicDistricts,
+    electionPrecincts,
     activeMapLayer,
     activeNeighborhoodId,
     activeCouncilDistrictId,
     activeHistoricDistrictId,
+    activePrecinctId,
     scope,
   ])
 

@@ -17,17 +17,21 @@ import type { MapLayerMode } from '@/lib/types'
 
 interface TopBarProps {
   activeLocationName: string
+  activeJurisdictionLabel?: string
   activeMapLayer: MapLayerMode
   onChangeMapLayer: (layer: MapLayerMode) => void
   neighborhoods: any[]
   councilDistricts: any[]
   historicDistricts: any[]
+  electionPrecincts: any[]
   activeNeighborhoodId: number
   activeCouncilDistrictId: number
   activeHistoricDistrictId: number
+  activePrecinctId: number
   onSelectNeighborhood: (id: number) => void
   onSelectCouncilDistrict: (id: number) => void
   onSelectHistoricDistrict: (id: number) => void
+  onSelectPrecinct: (id: number) => void
   onAddressSearch: (query: string) => Promise<string | null>
   isDark: boolean
   onToggleTheme: () => void
@@ -43,17 +47,21 @@ interface TopBarProps {
 
 export default function TopBar({
   activeLocationName,
+  activeJurisdictionLabel,
   activeMapLayer,
   onChangeMapLayer,
   neighborhoods,
   councilDistricts,
   historicDistricts,
+  electionPrecincts,
   activeNeighborhoodId,
   activeCouncilDistrictId,
   activeHistoricDistrictId,
+  activePrecinctId,
   onSelectNeighborhood,
   onSelectCouncilDistrict,
   onSelectHistoricDistrict,
+  onSelectPrecinct,
   onAddressSearch,
   isDark,
   onToggleTheme,
@@ -69,6 +77,7 @@ export default function TopBar({
   const [pickerOpen, setPickerOpen] = useState(false)
   const [addressInput, setAddressInput] = useState('')
   const [addressFeedback, setAddressFeedback] = useState<string | null>(null)
+  const [jurisdictionFilter, setJurisdictionFilter] = useState<'all' | 'city' | 'unincorporated'>('all')
 
   const handleAddressSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,11 +93,14 @@ export default function TopBar({
   }
 
   const layerLabel =
-    activeMapLayer === 'council'
+    activeJurisdictionLabel ||
+    (activeMapLayer === 'council'
       ? 'Council District'
       : activeMapLayer === 'historic'
       ? 'Historic District'
-      : 'Neighborhood'
+      : activeMapLayer === 'precinct'
+      ? 'Election Precinct'
+      : 'Neighborhood')
 
   return (
     <header className="sticky top-0 z-40 bg-surface/95 backdrop-blur-md border-b border-border-subtle">
@@ -198,8 +210,8 @@ export default function TopBar({
             </div>
 
             {/* Layer Selector */}
-            <div className="grid grid-cols-3 gap-2">
-              {(['neighborhood', 'council', 'historic'] as MapLayerMode[]).map((layer) => (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(['neighborhood', 'council', 'historic', 'precinct'] as MapLayerMode[]).map((layer) => (
                 <button
                   key={layer}
                   type="button"
@@ -210,7 +222,13 @@ export default function TopBar({
                       : 'bg-surface-subtle border-border-subtle text-text-muted hover:text-text-main'
                   }`}
                 >
-                  {layer === 'neighborhood' ? 'Neighborhoods' : layer === 'council' ? 'Council Districts' : 'Historic Districts'}
+                  {layer === 'neighborhood'
+                    ? 'Neighborhoods'
+                    : layer === 'council'
+                    ? 'Council Districts'
+                    : layer === 'historic'
+                    ? 'Historic Districts'
+                    : 'Precincts'}
                 </button>
               ))}
             </div>
@@ -223,7 +241,7 @@ export default function TopBar({
                   type="text"
                   value={addressInput}
                   onChange={(e) => setAddressInput(e.target.value)}
-                  placeholder="Jump to street or landmark (e.g. Trolley Square, Highlands)..."
+                  placeholder="Filter areas or jump to street (e.g. Trolley Square, Claymont, Talleyville)..."
                   className="w-full pl-9 pr-3 py-2 rounded-xl bg-surface-subtle border border-border-subtle text-xs focus:outline-none focus:border-accent-main"
                 />
               </div>
@@ -236,26 +254,57 @@ export default function TopBar({
             </form>
             {addressFeedback && <p className="text-xs text-accent-main">{addressFeedback}</p>}
 
+            {/* Jurisdiction filter for Neighborhoods */}
+            {activeMapLayer === 'neighborhood' && (
+              <div className="flex items-center gap-1.5 text-[11px]">
+                <span className="text-text-muted font-semibold mr-1">Jurisdiction:</span>
+                {(['all', 'city', 'unincorporated'] as const).map((jf) => (
+                  <button
+                    key={jf}
+                    type="button"
+                    onClick={() => setJurisdictionFilter(jf)}
+                    className={`px-2.5 py-0.5 rounded-full border cursor-pointer ${
+                      jurisdictionFilter === jf
+                        ? 'bg-surface border-accent-main text-accent-main font-semibold'
+                        : 'bg-surface-subtle border-border-subtle text-text-muted'
+                    }`}
+                  >
+                    {jf === 'all' ? 'All Metro' : jf === 'city' ? 'Wilmington City' : 'County / Uninc.'}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Quick Zone Chips */}
             <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pt-1">
               {activeMapLayer === 'neighborhood' &&
-                neighborhoods.map((nh) => (
-                  <button
-                    key={nh.id}
-                    type="button"
-                    onClick={() => {
-                      onSelectNeighborhood(nh.id)
-                      setPickerOpen(false)
-                    }}
-                    className={`px-2.5 py-1 rounded-full text-xs border transition-colors cursor-pointer ${
-                      nh.id === activeNeighborhoodId
-                        ? 'bg-accent-main text-white border-accent-main font-semibold'
-                        : 'bg-surface-subtle border-border-subtle text-text-muted hover:text-text-main'
-                    }`}
-                  >
-                    {nh.name}
-                  </button>
-                ))}
+                neighborhoods
+                  .filter((nh) => {
+                    if (jurisdictionFilter !== 'all' && nh.jurisdiction !== jurisdictionFilter) return false
+                    if (addressInput.trim()) {
+                      return nh.name?.toLowerCase().includes(addressInput.trim().toLowerCase())
+                    }
+                    return true
+                  })
+                  .slice(0, 48)
+                  .map((nh) => (
+                    <button
+                      key={nh.id}
+                      type="button"
+                      onClick={() => {
+                        onSelectNeighborhood(nh.id)
+                        setPickerOpen(false)
+                      }}
+                      className={`px-2.5 py-1 rounded-full text-xs border transition-colors cursor-pointer ${
+                        nh.id === activeNeighborhoodId
+                          ? 'bg-accent-main text-white border-accent-main font-semibold'
+                          : 'bg-surface-subtle border-border-subtle text-text-muted hover:text-text-main'
+                      }`}
+                    >
+                      {nh.name}
+                      {nh.jurisdiction === 'unincorporated' ? ' · NCC' : ''}
+                    </button>
+                  ))}
               {activeMapLayer === 'council' &&
                 councilDistricts.map((cd) => (
                   <button
@@ -290,6 +339,24 @@ export default function TopBar({
                     }`}
                   >
                     {hd.name}
+                  </button>
+                ))}
+              {activeMapLayer === 'precinct' &&
+                electionPrecincts.slice(0, 60).map((pr) => (
+                  <button
+                    key={pr.id}
+                    type="button"
+                    onClick={() => {
+                      onSelectPrecinct(pr.id)
+                      setPickerOpen(false)
+                    }}
+                    className={`px-2.5 py-1 rounded-full text-xs border transition-colors cursor-pointer ${
+                      pr.id === activePrecinctId
+                        ? 'bg-accent-main text-white border-accent-main font-semibold'
+                        : 'bg-surface-subtle border-border-subtle text-text-muted hover:text-text-main'
+                    }`}
+                  >
+                    {pr.name}
                   </button>
                 ))}
             </div>

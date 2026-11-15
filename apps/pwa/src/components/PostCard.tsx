@@ -135,8 +135,13 @@ export default function PostCard({
                 </span>
               )}
             </div>
-            <div className="text-xs text-text-muted flex items-center gap-1.5">
+            <div className="text-xs text-text-muted flex items-center gap-1.5 flex-wrap">
               <span>{post.neighborhoodName}</span>
+              {post.jurisdiction === 'unincorporated' && (
+                <span className="px-1.5 py-0.2 rounded bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 text-[10px] font-semibold">
+                  County · Uninc.
+                </span>
+              )}
               <span>·</span>
               <span className="inline-flex items-center gap-1">
                 <Clock className="w-3 h-3" /> {formatTimeAgo(post.createdAt)}
@@ -163,11 +168,27 @@ export default function PostCard({
         <p className="text-sm text-text-muted leading-relaxed whitespace-pre-wrap">{post.content}</p>
       </div>
 
-      {/* Media Attachment */}
+      {/* Media Attachment (Real Photo or Autoplay-Muted Video) */}
       {post.mediaUrl && (
-        <div className="rounded-xl overflow-hidden border border-border-subtle bg-black/5 max-h-72 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={post.mediaUrl} alt={post.title} className="w-full max-h-72 object-contain" />
+        <div
+          className="rounded-xl overflow-hidden border border-border-subtle bg-black/10 max-h-80 flex items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {post.mediaType === 'video' || /\.(mp4|webm|mov)(\?|$)/i.test(post.mediaUrl) ? (
+            <video
+              src={post.mediaUrl}
+              poster={post.mediaThumbnailUrl || undefined}
+              autoPlay
+              muted
+              loop
+              playsInline
+              controls
+              className="w-full max-h-80 object-contain bg-black"
+            />
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={post.mediaUrl} alt={post.title} className="w-full max-h-80 object-contain" />
+          )}
         </div>
       )}
 

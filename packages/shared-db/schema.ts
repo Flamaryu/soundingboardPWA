@@ -86,6 +86,8 @@ export const posts = pgTable('posts', {
   content: text('content').notNull(),
   type: text('type').default('echo').notNull(), // 'echo' | 'proposal' | 'alert' | 'beacon' (also supports legacy 'miniblog' | 'story' | 'short')
   media_url: text('media_url'),
+  media_type: text('media_type').default('none').notNull(), // 'image' | 'video' | 'none'
+  media_thumbnail_url: text('media_thumbnail_url'),
   is_proposal: boolean('is_proposal').default(false).notNull(),
   is_anonymous: boolean('is_anonymous').default(false).notNull(),
   is_beacon: boolean('is_beacon').default(false).notNull(),

@@ -223,6 +223,8 @@ function mapRawPostToEchoPost(raw: any, mockDb: any, actorKey?: string): EchoPos
     content: raw.content || '',
     kind,
     mediaUrl: raw.mediaUrl ?? raw.media_url ?? null,
+    mediaType: (raw.mediaType ?? raw.media_type ?? (raw.mediaUrl || raw.media_url ? 'image' : 'none')) as any,
+    mediaThumbnailUrl: raw.mediaThumbnailUrl ?? raw.media_thumbnail_url ?? null,
     authorName,
     authorRole: isAnon ? 'citizen' : (raw.userRole || author?.role || 'citizen'),
     isAnonymous: isAnon,
@@ -233,8 +235,10 @@ function mapRawPostToEchoPost(raw: any, mockDb: any, actorKey?: string): EchoPos
     beaconExpiresAt: raw.beaconExpiresAt ?? raw.beacon_expires_at ?? null,
     neighborhoodId: nhId,
     neighborhoodName: nh?.name || raw.neighborhoodName || 'Wilmington',
+    jurisdiction: nh?.jurisdiction || 'city',
+    municipality: nh?.municipality || 'Wilmington',
     districtId: nh?.districtId,
-    districtName: district?.name || 'Wilmington District',
+    districtName: district?.name || (nh?.jurisdiction === 'unincorporated' ? 'County / Unincorporated' : 'Wilmington District'),
     latitude: coords.lat,
     longitude: coords.lng,
     radiusMeters: Math.max(300, radiusMeters),
@@ -350,6 +354,8 @@ export async function createNewPost(payload: {
   content: string
   kind: PostKind
   mediaUrl?: string
+  mediaType?: 'image' | 'video' | 'none'
+  mediaThumbnailUrl?: string
   neighborhoodId: number
   latitude: number
   longitude: number
@@ -364,13 +370,17 @@ export async function createNewPost(payload: {
   const isProposal = payload.kind === 'proposal'
   const isBeacon = payload.kind === 'beacon'
   const anonName = `citizen+${Math.floor(1000 + Math.random() * 9000)}`
+  const cleanMediaUrl = payload.mediaUrl?.trim() || null
+  const resolvedMediaType = payload.mediaType || (cleanMediaUrl ? 'image' : 'none')
 
   const newRaw = {
     id,
     title: payload.title.trim(),
     content: payload.content.trim(),
     type: payload.kind,
-    mediaUrl: payload.mediaUrl?.trim() || null,
+    mediaUrl: cleanMediaUrl,
+    mediaType: resolvedMediaType,
+    mediaThumbnailUrl: payload.mediaThumbnailUrl?.trim() || null,
     userId: payload.userId || null,
     userName: payload.isAnonymous ? anonName : (payload.authorName || 'Wilmington Neighbor'),
     userRole: payload.isAnonymous ? 'citizen' : (payload.userRole || 'citizen'),
@@ -405,6 +415,8 @@ export async function createNewPost(payload: {
         content: newRaw.content,
         type: newRaw.type,
         media_url: newRaw.mediaUrl,
+        media_type: resolvedMediaType,
+        media_thumbnail_url: newRaw.mediaThumbnailUrl,
         is_proposal: isProposal,
         is_anonymous: payload.isAnonymous,
         is_beacon: isBeacon,
